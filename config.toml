@@ -1,0 +1,5 @@
+# clipsync_rust_client configuration
+server_url = "ws://localhost:8067/ws"
+# token = "YOUR_TOKEN"
+username = "test"
+password = "ilovcv"
