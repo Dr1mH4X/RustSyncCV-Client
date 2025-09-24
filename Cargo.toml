@@ -8,6 +8,9 @@ edition = "2021"
  tokio = { version = "1.28", features = ["full"] }
 # WebSocket client with TLS
 tokio-tungstenite = { version = "0.27", features = ["__rustls-tls"] }
+# 显式引入 rustls 及根证书
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+webpki-roots = "0.26"
 # Futures utilities
  futures = "0.3"
  futures-util = "0.3"

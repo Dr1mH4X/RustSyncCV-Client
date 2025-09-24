@@ -10,6 +10,12 @@ use futures_util::{SinkExt, StreamExt};
 use std::{sync::{Arc, atomic::AtomicBool}, time::Duration};
 use tokio::{sync::{broadcast, mpsc}, time::sleep};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::Connector;
+use rustls::{ClientConfig as RustlsClientConfig};
+use std::sync::Arc as StdArc;
+use rustls::client::danger::{ServerCertVerifier, ServerCertVerified};
+use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use url::Url;
 use uuid::Uuid;
 use serde_json::json;
@@ -20,6 +26,14 @@ async fn main() -> Result<()> {
     let cfg = Config::load()?;
     let server_url = Url::parse(&cfg.server_url)?;
     println!("Connecting to: {}", server_url);
+
+    // 简单命令行参数解析: 支持 --insecure
+    let args: Vec<String> = std::env::args().collect();
+    let cli_insecure = args.iter().any(|a| a == "--insecure");
+    let insecure_effective = cfg.trust_insecure_cert || cli_insecure;
+    if insecure_effective && server_url.scheme() == "wss" {
+        eprintln!("[WARN] TLS 证书验证已被禁用 (来源: {} ). ", if cli_insecure {"--insecure 参数"} else {"配置 trust_insecure_cert"});
+    }
 
     // Unique device identifier
     let device_id = Uuid::new_v4().to_string();
@@ -51,7 +65,52 @@ async fn main() -> Result<()> {
 
     // Main connection loop
     loop {
-    match connect_async(server_url.clone().to_string()).await {
+    match {
+    if server_url.scheme() == "wss" && insecure_effective {
+            #[derive(Debug)]
+            struct NoVerify;
+            use rustls::{SignatureScheme, DigitallySignedStruct};
+            use rustls::client::danger::HandshakeSignatureValid;
+            impl ServerCertVerifier for NoVerify {
+                fn verify_server_cert(
+                    &self,
+                    _end_entity: &CertificateDer<'_>,
+                    _intermediates: &[CertificateDer<'_>],
+                    _server_name: &ServerName<'_>,
+                    _ocsp_response: &[u8],
+                    _now: UnixTime,
+                ) -> Result<ServerCertVerified, rustls::Error> { Ok(ServerCertVerified::assertion()) }
+                fn verify_tls12_signature(
+                    &self,
+                    _message: &[u8],
+                    _cert: &CertificateDer<'_>,
+                    _dss: &DigitallySignedStruct,
+                ) -> Result<HandshakeSignatureValid, rustls::Error> { Ok(HandshakeSignatureValid::assertion()) }
+                fn verify_tls13_signature(
+                    &self,
+                    _message: &[u8],
+                    _cert: &CertificateDer<'_>,
+                    _dss: &DigitallySignedStruct,
+                ) -> Result<HandshakeSignatureValid, rustls::Error> { Ok(HandshakeSignatureValid::assertion()) }
+                fn supported_verify_schemes(&self) -> Vec<SignatureScheme> { vec![
+                    SignatureScheme::ECDSA_NISTP256_SHA256,
+                    SignatureScheme::ED25519,
+                    SignatureScheme::RSA_PKCS1_SHA256,
+                ] }
+            }
+            let builder = RustlsClientConfig::builder().dangerous();
+            let config = builder.with_custom_certificate_verifier(StdArc::new(NoVerify)).with_no_client_auth();
+            let request = server_url.as_str().into_client_request().unwrap();
+            tokio_tungstenite::connect_async_tls_with_config(
+                request,
+                None,
+                false,
+                Some(Connector::Rustls(StdArc::new(config)))
+            ).await
+        } else {
+            connect_async(server_url.clone().to_string()).await
+        }
+    } {
             Ok((ws_stream, _)) => {
                 println!("WebSocket connected");
                 let (mut write, mut read) = ws_stream.split();

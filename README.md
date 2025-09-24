@@ -34,6 +34,9 @@ server_url = "ws://localhost:8067/ws"
 
 # 可选：最大允许发送的图片大小（KB），默认 512，超过则跳过广播
 # max_image_kb = 512
+
+# 可选：跳过 TLS 证书校验 (仅调试自签名/过期证书环境; 强烈不建议生产启用)
+# trust_insecure_cert = false
 ```
 
 根据实际需求修改各字段。
@@ -48,6 +51,48 @@ server_url = "ws://localhost:8067/ws"
 - 接收到来自服务端的 `image/png` 消息时，会 base64 解码并写入本地剪贴板（RGBA）。
 
 注意：某些平台/应用复制的超大图片（例如截图工具的高分辨率原始数据）可能会被过滤；如需放宽请调高 `max_image_kb`。 
+
+## 安全与 TLS 证书验证
+
+默认情况下，若 `server_url` 使用 `wss://`，客户端会执行标准 TLS 证书验证。
+
+在调试使用自签名、过期或尚未正确部署证书的测试服务器时，可以临时关闭验证：
+
+方式一（配置文件）：
+```toml
+trust_insecure_cert = true
+```
+
+方式二（命令行覆盖 / 临时使用）：
+```bash
+cargo run -- --insecure
+```
+或已构建可执行文件：
+```powershell
+./RustSyncCV-Client.exe --insecure
+```
+
+判定逻辑：只要配置项为 `true` 或命令行包含 `--insecure`，即进入“不安全模式”并完全跳过证书校验。
+
+⚠️ 警告：启用后易受到中间人攻击 (MITM)。请勿在生产或不可信网络环境使用。务必在调试结束后恢复安全模式。
+
+## 运行示例
+
+调试（普通非 TLS）：
+```bash
+cargo run
+```
+
+调试自签名 TLS（跳过验证，风险自担）：
+```bash
+cargo run -- --insecure
+```
+
+生产（推荐，使用有效证书）：
+```bash
+cargo build --release
+./target/release/RustSyncCV-Client
+```
 
 ## 项目结构
 

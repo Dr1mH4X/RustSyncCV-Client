@@ -22,6 +22,9 @@ pub struct Config {
     /// 最大允许的图片大小 (KB)，超出将跳过广播
     #[serde(default = "default_max_image_kb")]
     pub max_image_kb: u64,
+    /// 是否信任不安全(自签名/无效) TLS 证书 (仅调试用, 默认 false)
+    #[serde(default)]
+    pub trust_insecure_cert: bool,
 }
 
 impl Config {
@@ -31,7 +34,7 @@ impl Config {
         let config_file = cwd.join("config.toml");
         if !config_file.exists() {
             // Generate default config file
-            let template = "# clipsync_rust_client configuration\nserver_url = \"http://example.com\"\n# token = \"YOUR_TOKEN\"\n# username = \"user\"\n# password = \"pass\"\n# sync_interval = 5\n# max_image_kb = 512\n";
+            let template = "# clipsync_rust_client configuration\nserver_url = \"wss://example.com/ws\"\n# token = \"YOUR_TOKEN\"\n# username = \"user\"\n# password = \"pass\"\n# sync_interval = 5\n# max_image_kb = 512\n# trust_insecure_cert = false  # 仅调试: true 时跳过 TLS 证书校验(风险!)\n";
             fs::write(&config_file, template)?;
             return Err(anyhow::anyhow!(
                 "Default config created at {:?}. Please update it and rerun.", config_file
