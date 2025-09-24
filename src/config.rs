@@ -5,6 +5,8 @@ fn default_sync_interval() -> u64 {
 }
 use std::fs;
 
+fn default_max_image_kb() -> u64 { 512 } // 默认 512KB 限制
+
 #[derive(Deserialize)]
 pub struct Config {
     pub server_url: String,
@@ -17,6 +19,9 @@ pub struct Config {
     #[serde(default = "default_sync_interval")]
     #[allow(dead_code)]
     pub sync_interval: u64,
+    /// 最大允许的图片大小 (KB)，超出将跳过广播
+    #[serde(default = "default_max_image_kb")]
+    pub max_image_kb: u64,
 }
 
 impl Config {
@@ -26,7 +31,7 @@ impl Config {
         let config_file = cwd.join("config.toml");
         if !config_file.exists() {
             // Generate default config file
-            let template = "# clipsync_rust_client configuration\nserver_url = \"http://example.com\"\ntoken = \"YOUR_TOKEN\"\n";
+            let template = "# clipsync_rust_client configuration\nserver_url = \"http://example.com\"\n# token = \"YOUR_TOKEN\"\n# username = \"user\"\n# password = \"pass\"\n# sync_interval = 5\n# max_image_kb = 512\n";
             fs::write(&config_file, template)?;
             return Err(anyhow::anyhow!(
                 "Default config created at {:?}. Please update it and rerun.", config_file

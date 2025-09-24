@@ -1,5 +1,5 @@
 [package]
-name = "clipsync_rust_client"
+name = "RustSyncCV-Client"
 version = "0.1.0"
 edition = "2021"
 
@@ -13,6 +13,7 @@ tokio-tungstenite = { version = "0.27", features = ["__rustls-tls"] }
  futures-util = "0.3"
 # Clipboard access
 arboard = "3.6"
+image = "0.25"
 # Serialization
 serde = "1.0"
 serde_json = "1.0"

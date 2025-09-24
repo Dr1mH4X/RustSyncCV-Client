@@ -35,8 +35,9 @@ async fn main() -> Result<()> {
         let tx = tx_out.clone();
         let disable = disable_flag.clone();
         let dev = device_id.clone();
+        let max_image_kb = cfg.max_image_kb;
         tokio::spawn(async move {
-            start_clipboard_monitor(tx, disable, dev).await;
+            start_clipboard_monitor(tx, disable, dev, max_image_kb).await;
         });
     }
 

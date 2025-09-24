@@ -1,5 +1,12 @@
 use serde::{Deserialize, Serialize};
 
+// 消息类型常量
+pub const MSG_TYPE_CLIPBOARD_UPDATE: &str = "clipboard_update";
+
+// 内容类型常量
+pub const CONTENT_TYPE_TEXT: &str = "text/plain";
+pub const CONTENT_TYPE_IMAGE_PNG: &str = "image/png";
+
 #[derive(Serialize, Deserialize)]
 pub struct AuthRequest {
     #[serde(rename = "type")]
@@ -59,4 +66,16 @@ pub struct ClipboardBroadcast {
 pub struct ClipboardBroadcastPayload {
     pub content_type: String,
     pub data: String,
+}
+
+// 客户端发送的消息结构
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "type", content = "payload")]
+pub enum ClientMessage {
+    // 文本消息
+    #[serde(rename = "text")]
+    Text { data: String },
+    // 图片消息（PNG 格式二进制）
+    #[serde(rename = "image")]
+    Image { data: Vec<u8> },
 }
