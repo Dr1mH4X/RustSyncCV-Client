@@ -17,9 +17,20 @@
 └── GUI/              # GUI crate
 ```
 
-## 快速开始
+## 开始前
 
-在运行以下命令前，请确保已经根据各子项目中的 `config.toml` 模板完成配置。
+请确保已经根据 `config.toml` 模板完成配置。
+
+```
+server_url = "wss://example.com/ws"
+username = "user"
+password = "pass"
+sync_interval = 5
+max_image_kb = 512
+trust_insecure_cert = true
+# material_effect = "acrylic"
+```
+
 
 ## Star History
 
