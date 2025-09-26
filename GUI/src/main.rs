@@ -1,3 +1,5 @@
+#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
+
 mod runtime;
 
 use std::{path::PathBuf, sync::Arc};
@@ -7,7 +9,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
 use parking_lot::Mutex;
-use simplelog::{ColorChoice, Config as LogConfig, LevelFilter, TermLogger, TerminalMode};
+use simplelog::{ColorChoice, ConfigBuilder, LevelFilter, TermLogger, TerminalMode};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
 #[cfg(target_os = "windows")]
@@ -244,13 +246,11 @@ impl AppContext {
 }
 
 fn main() -> Result<()> {
-    TermLogger::init(
-        LevelFilter::Info,
-        LogConfig::default(),
-        TerminalMode::Mixed,
-        ColorChoice::Auto,
-    )
-    .ok();
+    let log_config = ConfigBuilder::new()
+        .add_filter_ignore_str("fontdb")
+        .build();
+
+    TermLogger::init(LevelFilter::Info, log_config, TerminalMode::Mixed, ColorChoice::Auto).ok();
 
     let runtime = Arc::new(Runtime::new()?);
     let config_dir = resolve_config_dir()?;
