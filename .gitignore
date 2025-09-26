@@ -1,0 +1,38 @@
+# Rust build artifacts
+/target
+**/target/
+
+# Binaries and release outputs
+**/dist/
+**/release/
+
+# IDE and editor settings
+.vscode/
+.idea/
+**/.vscode/
+**/.idea/
+*.code-workspace
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*.swp
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Backups
+**/*.rs.bk
+
+# CLI workspace
+CLI/.git/
+CLI/dist/
+CLI/target
+CLI/config.toml
+
+# GUI workspace
+GUI/target
+GUI/vendor
+GUI/config.toml

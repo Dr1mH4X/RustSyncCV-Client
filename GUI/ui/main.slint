@@ -1,0 +1,190 @@
+import { Button, CheckBox, LineEdit, ScrollView, SpinBox } from "std-widgets.slint";
+
+component LogScrollView inherits ScrollView {
+    in property <[string]> lines;
+
+    viewport := VerticalLayout {
+        spacing: 4px;
+        for line[i] in root.lines: Text { text: line; color: #bdc3c7; }
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "RustSyncCV";
+    width: 520px;
+    height: 420px;
+    default-font-size: 15px;
+    in-out property <bool> window_transparent;
+    background: window_transparent ? rgba(0, 0, 0, 0.0) : rgba(0, 0, 0, 1.0);
+
+    in property <bool> paused;
+    in property <string> status_text;
+    in property <[string]> log_lines;
+    in-out property <bool> settings_visible;
+    in-out property <string> settings_error;
+    in-out property <string> settings_server_url;
+    in-out property <string> settings_token;
+    in-out property <string> settings_username;
+    in-out property <string> settings_password;
+    in-out property <int> settings_max_image_kb;
+    in-out property <int> settings_sync_interval;
+    in-out property <bool> settings_trust_insecure_cert;
+    in-out property <bool> settings_use_acrylic;
+    callback toggle_pause();
+    callback open_settings();
+    callback clear_logs();
+    callback save_settings();
+    callback close_settings();
+
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: rgba(15, 18, 26, 0.58);
+
+        VerticalLayout {
+            padding: 16px;
+            spacing: 12px;
+
+            Text {
+                text: "状态: " + (root.paused ? "已暂停" : "运行中") + " | " + root.status_text;
+                color: root.paused ? #c0392b : #2ecc71;
+            }
+
+            HorizontalLayout {
+                spacing: 12px;
+                Button { text: root.paused ? "恢复同步" : "暂停同步"; clicked => { root.toggle_pause(); } }
+                Button { text: "设置"; clicked => { root.open_settings(); } }
+                Button { text: "清空日志"; clicked => { root.clear_logs(); } }
+            }
+
+            Text { text: "日志"; font-weight: 600; }
+
+            Rectangle {
+                height: 250px;
+                clip: true;
+                background: rgba(20, 24, 34, 0.55);
+                border-radius: 10px;
+
+                LogScrollView {
+                    width: parent.width;
+                    height: parent.height;
+                    lines: root.log_lines;
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        visible: root.settings_visible;
+        width: parent.width;
+        height: parent.height;
+        background: @linear-gradient(0deg, rgba(0,0,0,0.45), rgba(0,0,0,0.45));
+
+        VerticalLayout {
+            width: parent.width;
+            height: parent.height;
+            padding: 18px;
+
+            Rectangle {
+                horizontal-stretch: 1.0;
+                vertical-stretch: 1.0;
+                background: rgba(34, 44, 60, 0.84);
+                border-radius: 10px;
+                clip: true;
+
+                VerticalLayout {
+                    padding: 18px;
+                    spacing: 14px;
+
+                    HorizontalLayout {
+                        spacing: 10px;
+
+                        Text {
+                            text: "设置";
+                            font-size: 18px;
+                            color: #ecf0f1;
+                            horizontal-stretch: 1.0;
+                        }
+
+                        Button {
+                            text: "关闭";
+                            preferred-width: 80px;
+                            clicked => { root.close_settings(); }
+                        }
+                    }
+
+                    ScrollView {
+                        horizontal-stretch: 1.0;
+                        vertical-stretch: 1.0;
+
+                        viewport := VerticalLayout {
+                            spacing: 10px;
+
+                            Text { text: "服务器地址"; color: #ecf0f1; wrap: word-wrap; horizontal-stretch: 1.0; }
+                            LineEdit { text <=> root.settings_server_url; horizontal-stretch: 1.0; }
+
+                            Text { text: "认证 Token (可选)"; color: #ecf0f1; wrap: word-wrap; horizontal-stretch: 1.0; }
+                            LineEdit { text <=> root.settings_token; horizontal-stretch: 1.0; }
+
+                            Text { text: "用户名 (Token 留空时必填)"; color: #ecf0f1; wrap: word-wrap; horizontal-stretch: 1.0; }
+                            LineEdit { text <=> root.settings_username; horizontal-stretch: 1.0; }
+
+                            Text { text: "密码"; color: #ecf0f1; wrap: word-wrap; horizontal-stretch: 1.0; }
+                            LineEdit { text <=> root.settings_password; horizontal-stretch: 1.0; }
+
+                            Text { text: "图片大小上限 (KB)"; color: #ecf0f1; horizontal-stretch: 1.0; }
+                            SpinBox {
+                                horizontal-stretch: 1.0;
+                                minimum: 32;
+                                maximum: 8192;
+                                value <=> root.settings_max_image_kb;
+                            }
+
+                            Text { text: "同步间隔 (秒)"; color: #ecf0f1; horizontal-stretch: 1.0; }
+                            SpinBox {
+                                horizontal-stretch: 1.0;
+                                minimum: 1;
+                                maximum: 60;
+                                value <=> root.settings_sync_interval;
+                            }
+
+                            CheckBox {
+                                text: "使用 Acrylic 背景 (关闭为 Mica)";
+                                checked <=> root.settings_use_acrylic;
+                                horizontal-stretch: 1.0;
+                            }
+
+                            CheckBox {
+                                text: "忽略 TLS 证书错误";
+                                checked <=> root.settings_trust_insecure_cert;
+                                horizontal-stretch: 1.0;
+                            }
+
+                            Text {
+                                visible: root.settings_error != "";
+                                text: root.settings_error;
+                                color: #e74c3c;
+                                wrap: word-wrap;
+                                horizontal-stretch: 1.0;
+                            }
+
+                            HorizontalLayout {
+                                spacing: 10px;
+                                alignment: end;
+                                Button {
+                                    text: "取消";
+                                    clicked => { root.close_settings(); }
+                                }
+                                Button {
+                                    text: "保存";
+                                    enabled: root.settings_server_url != "";
+                                    clicked => { root.save_settings(); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
