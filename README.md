@@ -3,6 +3,10 @@
 ## TODO
 - [x] system-tray
 
+## Download
+- CLI https://github.com/Dr1mH4X/RustSyncCV-Client/releases/tag/v0.42
+- GUI https://github.com/Dr1mH4X/RustSyncCV-Client/releases/latest
+
 ## 目录结构
 
 ```
@@ -16,3 +20,11 @@
 ## 快速开始
 
 在运行以下命令前，请确保已经根据各子项目中的 `config.toml` 模板完成配置。
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Dr1mH4X/RustSyncCV-Client,Dr1mH4X/RustSyncCV-Server&type=Date)](https://www.star-history.com/#Dr1mH4X/RustSyncCV-Client&Dr1mH4X/RustSyncCV-Server&Date)
+
+## License
+
+[MIT](./LICENSE)
