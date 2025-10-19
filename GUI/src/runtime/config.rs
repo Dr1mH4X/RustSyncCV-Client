@@ -18,6 +18,10 @@ fn default_material_effect() -> String {
     "mica".to_string()
 }
 
+fn default_theme_mode() -> String {
+    "system".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub server_url: String,
@@ -35,13 +39,25 @@ pub struct Config {
     pub trust_insecure_cert: bool,
     #[serde(default = "default_material_effect")]
     pub material_effect: String,
+    #[serde(default = "default_theme_mode")]
+    pub theme_mode: String,
 }
 
 impl Config {
     pub fn load_from_dir(base_dir: &Path) -> Result<Self> {
         let config_path = base_dir.join("config.toml");
         if !config_path.exists() {
-            let template = "# clipsync_rust_client configuration\nserver_url = \"wss://example.com/ws\"\n# token = \"YOUR_TOKEN\"\n# username = \"user\"\n# password = \"pass\"\n# sync_interval = 5\n# max_image_kb = 512\n# trust_insecure_cert = false  # 仅调试: true 时跳过 TLS 证书校验(风险!)\n# material_effect = \"mica\"  # 可选: mica 或 acrylic\n";
+            let template = r#"# clipsync_rust_client configuration
+server_url = "wss://example.com/ws"
+# token = "YOUR_TOKEN"
+# username = "user"
+# password = "pass"
+# sync_interval = 5
+# max_image_kb = 512
+# trust_insecure_cert = false  # 仅调试: true 时跳过 TLS 证书校验(风险!)
+# material_effect = "mica"  # 可选: mica 或 acrylic
+# theme_mode = "system"  # 可选: system, dark, light; Windows 上影响窗口主题（优先于系统默认）
+"#;
             fs::write(&config_path, template)
                 .with_context(|| format!("无法写入默认配置文件: {:?}", config_path))?;
             return Err(anyhow!(

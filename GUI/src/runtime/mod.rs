@@ -73,7 +73,7 @@ enum RuntimeCommand {
     Reload(StartOptions),
     Pause,
     Resume,
-    Stop,
+
     Shutdown,
 }
 
@@ -109,13 +109,6 @@ impl RuntimeHandle {
             .send(RuntimeCommand::Reload(options))
             .await
             .context("发送重新加载命令失败")
-    }
-
-    pub async fn stop(&self) -> Result<()> {
-        self.command_tx
-            .send(RuntimeCommand::Stop)
-            .await
-            .context("发送停止命令失败")
     }
 
     pub async fn shutdown(&self) -> Result<()> {
@@ -193,13 +186,7 @@ impl RuntimeWorker {
                         self.emit_error("尚未配置，无法恢复".into()).await;
                     }
                 }
-                RuntimeCommand::Stop => {
-                    self.paused = true;
-                    self.last_options = None;
-                    self.stop_tasks(true).await;
-                    self.emit_status("已停止").await;
-                    self.emit_connection(ConnectionStateEvent::Idle).await;
-                }
+
                 RuntimeCommand::Reload(options) => {
                     self.emit_status("正在应用新配置").await;
                     self.stop_tasks(true).await;

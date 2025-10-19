@@ -6,6 +6,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
+    time::{Duration, Instant},
 };
 
 use anyhow::Result;
@@ -13,10 +14,10 @@ use arboard::{Clipboard, ImageData as ClipboardImage};
 use base64::Engine;
 use image::{DynamicImage, ImageFormat, RgbaImage};
 use log::Level;
-use tokio::sync::{broadcast, mpsc};
 use tokio::{
+    sync::{broadcast, mpsc},
     task,
-    time::{sleep, Duration},
+    time::sleep,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -38,8 +39,8 @@ pub async fn start_clipboard_monitor(
     cancel: CancellationToken,
 ) {
     let mut last_text = String::new();
-    let mut last_image_hash: Option<u64> = None;
-    let mut last_send_time = std::time::Instant::now();
+    let mut last_rgba_hash: Option<u64> = None;
+    let mut last_send_time = Instant::now();
 
     loop {
         if cancel.is_cancelled() {
@@ -59,24 +60,27 @@ pub async fn start_clipboard_monitor(
         let clipboard_state = task::spawn_blocking(|| read_clipboard_content()).await;
 
         if let Ok(Ok(content)) = clipboard_state {
-            let now = std::time::Instant::now();
+            let now = Instant::now();
             if now.duration_since(last_send_time) >= MIN_BROADCAST_INTERVAL {
                 match content {
                     ClipboardContent::Text(text) => {
                         if !text.is_empty() && text != last_text {
                             last_text = text.clone();
                             last_send_time = now;
+
                             let _ = events
                                 .send(RuntimeEvent::Log(RuntimeLogEvent::new(
                                     Level::Info,
                                     format!("检测到文本剪贴板更新 len={}", text.len()),
                                 )))
                                 .await;
+
                             let _ = events
                                 .send(RuntimeEvent::ClipboardSent {
                                     content_type: CONTENT_TYPE_TEXT.to_string(),
                                 })
                                 .await;
+
                             let update = ClipboardUpdate {
                                 msg_type: MSG_TYPE_CLIPBOARD_UPDATE.to_string(),
                                 payload: ClipboardUpdatePayload {
@@ -89,25 +93,30 @@ pub async fn start_clipboard_monitor(
                         }
                     }
                     ClipboardContent::Image(bytes, width, height) => {
-                        if let Ok(encoded) = encode_png(bytes, width, height) {
-                            if (encoded.len() as u64) > max_image_kb * 1024 {
-                                let _ = events
-                                    .send(RuntimeEvent::Log(RuntimeLogEvent::new(
-                                        Level::Warn,
-                                        format!(
-                                            "跳过过大的图片 size={} limit={}KB",
-                                            encoded.len(),
-                                            max_image_kb
-                                        ),
-                                    )))
-                                    .await;
-                            } else {
-                                let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                                encoded.hash(&mut hasher);
-                                let hash = hasher.finish();
-                                if Some(hash) != last_image_hash {
-                                    last_image_hash = Some(hash);
+                        // 先对原始 RGBA 数据进行哈希，只有变化时才进行 PNG 编码
+                        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                        width.hash(&mut hasher);
+                        height.hash(&mut hasher);
+                        bytes.hash(&mut hasher);
+                        let rgba_hash = hasher.finish();
+
+                        if Some(rgba_hash) != last_rgba_hash {
+                            if let Ok(encoded) = encode_png(bytes, width, height) {
+                                if (encoded.len() as u64) > max_image_kb * 1024 {
+                                    let _ = events
+                                        .send(RuntimeEvent::Log(RuntimeLogEvent::new(
+                                            Level::Warn,
+                                            format!(
+                                                "跳过过大的图片 size={} limit={}KB",
+                                                encoded.len(),
+                                                max_image_kb
+                                            ),
+                                        )))
+                                        .await;
+                                } else {
+                                    last_rgba_hash = Some(rgba_hash);
                                     last_send_time = now;
+
                                     let _ = events
                                         .send(RuntimeEvent::Log(RuntimeLogEvent::new(
                                             Level::Info,
@@ -117,13 +126,16 @@ pub async fn start_clipboard_monitor(
                                             ),
                                         )))
                                         .await;
+
                                     let _ = events
                                         .send(RuntimeEvent::ClipboardSent {
                                             content_type: CONTENT_TYPE_IMAGE_PNG.to_string(),
                                         })
                                         .await;
+
                                     let b64 =
                                         base64::engine::general_purpose::STANDARD.encode(&encoded);
+
                                     let update = ClipboardUpdate {
                                         msg_type: MSG_TYPE_CLIPBOARD_UPDATE.to_string(),
                                         payload: ClipboardUpdatePayload {
@@ -140,12 +152,15 @@ pub async fn start_clipboard_monitor(
                 }
             }
         } else if let Ok(Err(e)) = clipboard_state {
-            let _ = events
-                .send(RuntimeEvent::Log(RuntimeLogEvent::new(
-                    Level::Error,
-                    format!("读取剪贴板失败: {}", e),
-                )))
-                .await;
+            // 避免在无可识别内容时产生噪声日志
+            if e != "剪贴板没有可识别的内容" {
+                let _ = events
+                    .send(RuntimeEvent::Log(RuntimeLogEvent::new(
+                        Level::Error,
+                        format!("读取剪贴板失败: {}", e),
+                    )))
+                    .await;
+            }
         }
 
         if tokio::select! {
@@ -178,7 +193,7 @@ pub async fn start_clipboard_setter(
                     match payload.content_type.as_str() {
                         CONTENT_TYPE_TEXT => {
                             if let Err(err) = set_text(&payload.data, disable_flag.clone()).await {
-                                let _ = events.send(RuntimeEvent::Log(RuntimeLogEvent::new(Level::Error, format!("设置文本剪贴板失败: {}", err)))) .await;
+                                let _ = events.send(RuntimeEvent::Log(RuntimeLogEvent::new(Level::Error, format!("设置文本剪贴板失败: {}", err)))).await;
                             } else {
                                 let _ = events.send(RuntimeEvent::ClipboardReceived { content_type: CONTENT_TYPE_TEXT.to_string() }).await;
                                 let _ = events.send(RuntimeEvent::Log(RuntimeLogEvent::new(Level::Info, String::from("已应用来自远端的文本剪贴板")))).await;

@@ -1,4 +1,7 @@
-#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
+#![cfg_attr(
+    all(target_os = "windows", not(debug_assertions)),
+    windows_subsystem = "windows"
+)]
 
 mod runtime;
 
@@ -12,9 +15,9 @@ use parking_lot::Mutex;
 use simplelog::{ColorChoice, ConfigBuilder, LevelFilter, TermLogger, TerminalMode};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
+use slint::winit_030::{winit::dpi::LogicalSize, WinitWindowAccessor};
 #[cfg(target_os = "windows")]
 use slint::Timer;
-use slint::winit_030::{winit::dpi::LogicalSize, WinitWindowAccessor};
 use tokio::runtime::Runtime;
 
 use runtime::config::Config;
@@ -22,112 +25,7 @@ use runtime::{spawn_runtime, ConnectionStateEvent, RuntimeEvent, StartOptions};
 
 slint::include_modules!();
 
-#[cfg(target_os = "windows")]
-mod windows_material {
-    use std::{ffi::c_void, mem::size_of};
-
-    use anyhow::{anyhow, Result};
-    use slint::winit_030::{winit, WinitWindowAccessor};
-    use slint::ComponentHandle;
-    use windows::Win32::Foundation::{BOOL, HWND};
-    use windows::Win32::Graphics::Dwm::{
-        DwmSetWindowAttribute, DWM_SYSTEMBACKDROP_TYPE, DWMSBT_MAINWINDOW, DWMSBT_TRANSIENTWINDOW,
-        DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_USE_IMMERSIVE_DARK_MODE,
-    };
-    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
-
-    #[derive(Clone, Copy, Debug)]
-    pub enum Effect {
-        Mica,
-        Acrylic,
-    }
-
-    impl Effect {
-        pub fn from_str(value: &str) -> Option<Self> {
-            let normalized = value.trim().to_ascii_lowercase();
-            match normalized.as_str() {
-                "mica" => Some(Self::Mica),
-                "acrylic" => Some(Self::Acrylic),
-                _ => None,
-            }
-        }
-    }
-
-    pub fn apply_to_component<C: ComponentHandle>(component: &C, effect: Effect) -> Result<()> {
-        match component.window().with_winit_window(|winit_window| {
-            let handle = winit_window
-                .window_handle()
-                .map_err(|err| anyhow!("获取窗口句柄失败: {err:?}"))?;
-
-            match handle.as_raw() {
-                RawWindowHandle::Win32(win32) => unsafe {
-                    apply_to_hwnd(HWND(win32.hwnd.get()), effect)
-                },
-                _ => Err(anyhow!("当前窗口不是 Win32 句柄，无法应用特效")),
-            }
-        }) {
-            Some(result) => result,
-            None => Ok(()),
-        }
-    }
-
-    unsafe fn apply_to_hwnd(hwnd: HWND, effect: Effect) -> Result<()> {
-        if hwnd.0 == 0 {
-            return Err(anyhow!("窗口句柄无效"));
-        }
-
-        let backdrop = match effect {
-            Effect::Mica => DWMSBT_MAINWINDOW,
-            Effect::Acrylic => DWMSBT_TRANSIENTWINDOW,
-        };
-
-        let backdrop_ptr = &backdrop as *const _ as *const c_void;
-        DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_SYSTEMBACKDROP_TYPE,
-            backdrop_ptr,
-            size_of::<DWM_SYSTEMBACKDROP_TYPE>() as u32,
-        )?;
-
-        let enable_dark = BOOL(1);
-        let dark_ptr = &enable_dark as *const _ as *const c_void;
-        DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_USE_IMMERSIVE_DARK_MODE,
-            dark_ptr,
-            size_of::<BOOL>() as u32,
-        )?;
-
-        Ok(())
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-mod windows_material {
-    use anyhow::Result;
-    use slint::ComponentHandle;
-
-    #[derive(Clone, Copy, Debug)]
-    pub enum Effect {
-        Mica,
-        Acrylic,
-    }
-
-    impl Effect {
-        pub fn from_str(value: &str) -> Option<Self> {
-            let normalized = value.trim().to_ascii_lowercase();
-            match normalized.as_str() {
-                "mica" => Some(Self::Mica),
-                "acrylic" => Some(Self::Acrylic),
-                _ => None,
-            }
-        }
-    }
-
-    pub fn apply_to_component<C: ComponentHandle>(_component: &C, _effect: Effect) -> Result<()> {
-        Ok(())
-    }
-}
+mod windows_material;
 
 fn sanitize_material_effect(value: &str) -> &'static str {
     let trimmed = value.trim();
@@ -140,7 +38,24 @@ fn sanitize_material_effect(value: &str) -> &'static str {
 
 fn resolve_material_effect(value: &str) -> windows_material::Effect {
     let sanitized = sanitize_material_effect(value);
+
     windows_material::Effect::from_str(sanitized).unwrap_or(windows_material::Effect::Mica)
+}
+
+fn sanitize_theme_mode(value: &str) -> &'static str {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "dark" => "dark",
+        "light" => "light",
+        _ => "system",
+    }
+}
+
+fn resolve_theme_mode(value: &str) -> windows_material::ThemeMode {
+    match sanitize_theme_mode(value) {
+        "dark" => windows_material::ThemeMode::Dark,
+        "light" => windows_material::ThemeMode::Light,
+        _ => windows_material::ThemeMode::System,
+    }
 }
 
 struct UiState {
@@ -148,16 +63,24 @@ struct UiState {
     insecure_override: bool,
 }
 
-#[derive(Clone)]
 struct SettingsFormData {
     server_url: SharedString,
+
     token: SharedString,
+
     username: SharedString,
+
     password: SharedString,
+
     max_image_kb: i32,
+
     sync_interval: i32,
+
     trust_insecure_cert: bool,
+
     material_effect: SharedString,
+
+    theme_mode: SharedString,
 }
 
 impl Default for SettingsFormData {
@@ -171,6 +94,7 @@ impl Default for SettingsFormData {
             sync_interval: 5,
             trust_insecure_cert: false,
             material_effect: SharedString::from("mica"),
+            theme_mode: SharedString::from("system"),
         }
     }
 }
@@ -246,11 +170,15 @@ impl AppContext {
 }
 
 fn main() -> Result<()> {
-    let log_config = ConfigBuilder::new()
-        .add_filter_ignore_str("fontdb")
-        .build();
+    let log_config = ConfigBuilder::new().add_filter_ignore_str("fontdb").build();
 
-    TermLogger::init(LevelFilter::Info, log_config, TerminalMode::Mixed, ColorChoice::Auto).ok();
+    TermLogger::init(
+        LevelFilter::Info,
+        log_config,
+        TerminalMode::Mixed,
+        ColorChoice::Auto,
+    )
+    .ok();
 
     let runtime = Arc::new(Runtime::new()?);
     let config_dir = resolve_config_dir()?;
@@ -280,19 +208,48 @@ fn main() -> Result<()> {
         // 仅按配置决定材质效果（禁用环境变量覆盖）
         let effect = resolve_material_effect(initial_form.material_effect.as_str());
 
-        if let Err(err) = windows_material::apply_to_component(&ui, effect) {
+        let theme = resolve_theme_mode(initial_form.theme_mode.as_str());
+        if let Err(err) = windows_material::apply_to_component_with_theme(&ui, effect, theme) {
             log::warn!("应用 Windows 材质失败: {err}");
+
+            ui.set_window_transparent(false);
         } else {
             // 材质应用成功后再开启透明
             ui.set_window_transparent(true);
         }
 
         let retry_effect = effect;
+        let retry_theme = theme;
+
         let ui_for_retry = ui.as_weak();
+
         Timer::single_shot(Duration::from_millis(60), move || {
             if let Some(ui) = ui_for_retry.upgrade() {
-                if let Err(err) = windows_material::apply_to_component(&ui, retry_effect) {
+                if let Err(err) =
+                    windows_material::apply_to_component_with_theme(&ui, retry_effect, retry_theme)
+                {
                     log::warn!("二次应用 Windows 材质失败: {err}");
+                } else {
+                    ui.set_window_transparent(true);
+                }
+            }
+        });
+
+        // 第三次更晚的重试，进一步规避窗口初始化早期时序问题
+
+        let retry_effect_3 = effect;
+
+        let retry_theme_3 = theme;
+        let ui_for_retry_3 = ui.as_weak();
+
+        Timer::single_shot(Duration::from_millis(200), move || {
+            if let Some(ui) = ui_for_retry_3.upgrade() {
+                if let Err(err) = windows_material::apply_to_component_with_theme(
+                    &ui,
+                    retry_effect_3,
+                    retry_theme_3,
+                ) {
+                    log::warn!("三次应用 Windows 材质失败: {err}");
                 } else {
                     ui.set_window_transparent(true);
                 }
@@ -568,13 +525,22 @@ fn save_settings(
 
     let updated_config = Config {
         server_url: server_url.clone(),
+
         token: token_opt.clone(),
+
         username: username_opt.clone(),
+
         password: password_opt.clone(),
+
         sync_interval,
+
         max_image_kb,
+
         trust_insecure_cert: form.trust_insecure_cert,
+
         material_effect: material_effect.to_string(),
+
+        theme_mode: sanitize_theme_mode(form.theme_mode.as_str()).to_string(),
     };
 
     let config_dir = ctx.config_dir();
@@ -584,26 +550,46 @@ fn save_settings(
 
     let sanitized_data = SettingsFormData {
         server_url: server_url.clone().into(),
+
         token: token_opt.clone().unwrap_or_default().into(),
+
         username: username_opt.clone().unwrap_or_default().into(),
+
         password: password_opt.clone().unwrap_or_default().into(),
+
         max_image_kb: max_image_kb as i32,
+
         sync_interval: sync_interval as i32,
+
         trust_insecure_cert: form.trust_insecure_cert,
+
         material_effect: SharedString::from(material_effect),
+
+        theme_mode: SharedString::from(sanitize_theme_mode(form.theme_mode.as_str())),
     };
 
-    let weak = ui.clone();
     #[cfg(target_os = "windows")]
     let effect_to_apply = resolve_material_effect(material_effect);
+
+    #[cfg(target_os = "windows")]
+    let theme_to_apply = resolve_theme_mode(form.theme_mode.as_str());
+
+    let weak = ui.clone();
     slint::invoke_from_event_loop(move || {
         if let Some(ui) = weak.upgrade() {
             ui.set_settings_visible(false);
             ui.set_settings_error("".into());
             apply_settings_to_ui(&ui, &sanitized_data);
+
             #[cfg(target_os = "windows")]
-            if let Err(err) = windows_material::apply_to_component(&ui, effect_to_apply) {
+            if let Err(err) = windows_material::apply_to_component_with_theme(
+                &ui,
+                effect_to_apply,
+                theme_to_apply,
+            ) {
                 log::warn!("应用 Windows 材质失败: {err}");
+
+                ui.set_window_transparent(false);
             } else {
                 ui.set_window_transparent(true);
             }
@@ -644,24 +630,38 @@ fn apply_settings_to_ui(ui: &MainWindow, data: &SettingsFormData) {
     ui.set_settings_password(data.password.clone());
     ui.set_settings_max_image_kb(data.max_image_kb);
     ui.set_settings_sync_interval(data.sync_interval);
+
     ui.set_settings_trust_insecure_cert(data.trust_insecure_cert);
-    ui.set_settings_use_acrylic(sanitize_material_effect(data.material_effect.as_str()) == "acrylic");
+
+    ui.set_settings_use_acrylic(
+        sanitize_material_effect(data.material_effect.as_str()) == "acrylic",
+    );
+    ui.set_settings_theme_mode(SharedString::from(sanitize_theme_mode(
+        data.theme_mode.as_str(),
+    )));
 }
 
 fn collect_settings_from_ui(ui: &MainWindow) -> SettingsFormData {
     SettingsFormData {
         server_url: ui.get_settings_server_url(),
+
         token: ui.get_settings_token(),
+
         username: ui.get_settings_username(),
+
         password: ui.get_settings_password(),
+
         max_image_kb: ui.get_settings_max_image_kb(),
         sync_interval: ui.get_settings_sync_interval(),
         trust_insecure_cert: ui.get_settings_trust_insecure_cert(),
+
         material_effect: SharedString::from(if ui.get_settings_use_acrylic() {
             "acrylic"
         } else {
             "mica"
         }),
+
+        theme_mode: ui.get_settings_theme_mode(),
     }
 }
 
@@ -676,7 +676,10 @@ fn settings_form_from_config(cfg: &Config) -> SettingsFormData {
         password: cfg.password.clone().unwrap_or_default().into(),
         max_image_kb: max_image as i32,
         sync_interval: sync_interval as i32,
+
         trust_insecure_cert: cfg.trust_insecure_cert,
+
         material_effect: SharedString::from(sanitize_material_effect(&cfg.material_effect)),
+        theme_mode: SharedString::from(sanitize_theme_mode(&cfg.theme_mode)),
     }
 }

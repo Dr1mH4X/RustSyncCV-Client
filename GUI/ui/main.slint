@@ -1,4 +1,4 @@
-import { Button, CheckBox, LineEdit, ScrollView, SpinBox } from "std-widgets.slint";
+import { Button, CheckBox, LineEdit, ScrollView, SpinBox, ComboBox } from "std-widgets.slint";
 
 component LogScrollView inherits ScrollView {
     in property <[string]> lines;
@@ -30,6 +30,7 @@ export component MainWindow inherits Window {
     in-out property <int> settings_sync_interval;
     in-out property <bool> settings_trust_insecure_cert;
     in-out property <bool> settings_use_acrylic;
+    in-out property <string> settings_theme_mode;
     callback toggle_pause();
     callback open_settings();
     callback clear_logs();
@@ -146,6 +147,13 @@ export component MainWindow inherits Window {
                                 minimum: 1;
                                 maximum: 60;
                                 value <=> root.settings_sync_interval;
+                            }
+
+                            Text { text: "主题"; color: #ecf0f1; horizontal-stretch: 1.0; }
+                            ComboBox {
+                                horizontal-stretch: 1.0;
+                                model: ["system", "dark", "light"];
+                                current-value <=> root.settings_theme_mode;
                             }
 
                             CheckBox {
