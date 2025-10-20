@@ -27,8 +27,6 @@ export component MainWindow inherits Window {
     in-out property <string> settings_username;
     in-out property <string> settings_password;
     in-out property <int> settings_max_image_kb;
-    in-out property <int> settings_sync_interval;
-    in-out property <bool> settings_trust_insecure_cert;
     in-out property <bool> settings_use_acrylic;
     in-out property <string> settings_theme_mode;
     callback toggle_pause();
@@ -141,14 +139,6 @@ export component MainWindow inherits Window {
                                 value <=> root.settings_max_image_kb;
                             }
 
-                            Text { text: "同步间隔 (秒)"; color: #ecf0f1; horizontal-stretch: 1.0; }
-                            SpinBox {
-                                horizontal-stretch: 1.0;
-                                minimum: 1;
-                                maximum: 60;
-                                value <=> root.settings_sync_interval;
-                            }
-
                             Text { text: "主题"; color: #ecf0f1; horizontal-stretch: 1.0; }
                             ComboBox {
                                 horizontal-stretch: 1.0;
@@ -159,12 +149,6 @@ export component MainWindow inherits Window {
                             CheckBox {
                                 text: "使用 Acrylic 背景 (关闭为 Mica)";
                                 checked <=> root.settings_use_acrylic;
-                                horizontal-stretch: 1.0;
-                            }
-
-                            CheckBox {
-                                text: "忽略 TLS 证书错误";
-                                checked <=> root.settings_trust_insecure_cert;
                                 horizontal-stretch: 1.0;
                             }
 

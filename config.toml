@@ -1,7 +1,6 @@
 server_url = "wss://example.com/ws"
 username = "username"
 password = "password"
-sync_interval = 5
 max_image_kb = 512
-trust_insecure_cert = false
 material_effect = "acrylic"
+theme_mode = "system"

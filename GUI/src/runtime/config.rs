@@ -6,10 +6,6 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 
-fn default_sync_interval() -> u64 {
-    5
-}
-
 fn default_max_image_kb() -> u64 {
     512
 }
@@ -31,12 +27,8 @@ pub struct Config {
     pub username: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
-    #[serde(default = "default_sync_interval")]
-    pub sync_interval: u64,
     #[serde(default = "default_max_image_kb")]
     pub max_image_kb: u64,
-    #[serde(default)]
-    pub trust_insecure_cert: bool,
     #[serde(default = "default_material_effect")]
     pub material_effect: String,
     #[serde(default = "default_theme_mode")]
@@ -52,9 +44,7 @@ server_url = "wss://example.com/ws"
 # token = "YOUR_TOKEN"
 # username = "user"
 # password = "pass"
-# sync_interval = 5
 # max_image_kb = 512
-# trust_insecure_cert = false  # 仅调试: true 时跳过 TLS 证书校验(风险!)
 # material_effect = "mica"  # 可选: mica 或 acrylic
 # theme_mode = "system"  # 可选: system, dark, light; Windows 上影响窗口主题（优先于系统默认）
 "#;

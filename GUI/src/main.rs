@@ -60,7 +60,6 @@ fn resolve_theme_mode(value: &str) -> windows_material::ThemeMode {
 
 struct UiState {
     paused: bool,
-    insecure_override: bool,
 }
 
 struct SettingsFormData {
@@ -73,10 +72,6 @@ struct SettingsFormData {
     password: SharedString,
 
     max_image_kb: i32,
-
-    sync_interval: i32,
-
-    trust_insecure_cert: bool,
 
     material_effect: SharedString,
 
@@ -91,8 +86,6 @@ impl Default for SettingsFormData {
             username: SharedString::from(""),
             password: SharedString::from(""),
             max_image_kb: 512,
-            sync_interval: 5,
-            trust_insecure_cert: false,
             material_effect: SharedString::from("mica"),
             theme_mode: SharedString::from("system"),
         }
@@ -112,10 +105,7 @@ impl AppContext {
         Self {
             runtime,
             handle,
-            state: Mutex::new(UiState {
-                paused: true,
-                insecure_override: false,
-            }),
+            state: Mutex::new(UiState { paused: true }),
             logs: Mutex::new(Vec::new()),
             config_dir,
         }
@@ -139,14 +129,6 @@ impl AppContext {
 
     fn is_paused(&self) -> bool {
         self.state.lock().paused
-    }
-
-    fn insecure_override(&self) -> bool {
-        self.state.lock().insecure_override
-    }
-
-    fn set_insecure_override(&self, value: bool) {
-        self.state.lock().insecure_override = value;
     }
 
     fn push_log(&self, line: impl Into<SharedString>) -> Vec<SharedString> {
@@ -192,7 +174,6 @@ fn main() -> Result<()> {
         handle.clone(),
         config_dir.clone(),
     ));
-    ctx.set_insecure_override(initial_form.trust_insecure_cert);
 
     let ui = MainWindow::new()?;
 
@@ -343,7 +324,6 @@ fn main() -> Result<()> {
     runtime.spawn(async move {
         let options = StartOptions {
             config_dir: start_ctx.config_dir(),
-            insecure_override: start_ctx.insecure_override(),
         };
         if let Err(err) = start_ctx.handle().start(options).await {
             let message = format!("启动失败: {}", err);
@@ -476,8 +456,6 @@ fn open_settings_dialog(ctx: &Arc<AppContext>, ui: &slint::Weak<MainWindow>) -> 
 
     let data = settings_form_from_config(&cfg);
 
-    ctx.set_insecure_override(data.trust_insecure_cert);
-
     let weak = ui.clone();
     slint::invoke_from_event_loop(move || {
         if let Some(ui) = weak.upgrade() {
@@ -520,9 +498,7 @@ fn save_settings(
     };
 
     let max_image_kb = form.max_image_kb.clamp(32, 8192) as u64;
-    let sync_interval = form.sync_interval.clamp(1, 60) as u64;
     let material_effect = sanitize_material_effect(form.material_effect.as_str());
-
     let updated_config = Config {
         server_url: server_url.clone(),
 
@@ -532,11 +508,7 @@ fn save_settings(
 
         password: password_opt.clone(),
 
-        sync_interval,
-
         max_image_kb,
-
-        trust_insecure_cert: form.trust_insecure_cert,
 
         material_effect: material_effect.to_string(),
 
@@ -545,8 +517,6 @@ fn save_settings(
 
     let config_dir = ctx.config_dir();
     updated_config.save_to_dir(&config_dir)?;
-
-    ctx.set_insecure_override(form.trust_insecure_cert);
 
     let sanitized_data = SettingsFormData {
         server_url: server_url.clone().into(),
@@ -558,10 +528,6 @@ fn save_settings(
         password: password_opt.clone().unwrap_or_default().into(),
 
         max_image_kb: max_image_kb as i32,
-
-        sync_interval: sync_interval as i32,
-
-        trust_insecure_cert: form.trust_insecure_cert,
 
         material_effect: SharedString::from(material_effect),
 
@@ -604,7 +570,6 @@ fn save_settings(
 
     let options = StartOptions {
         config_dir: config_dir.clone(),
-        insecure_override: ctx.insecure_override(),
     };
 
     let reload_handle = ctx.handle();
@@ -629,9 +594,6 @@ fn apply_settings_to_ui(ui: &MainWindow, data: &SettingsFormData) {
     ui.set_settings_username(data.username.clone());
     ui.set_settings_password(data.password.clone());
     ui.set_settings_max_image_kb(data.max_image_kb);
-    ui.set_settings_sync_interval(data.sync_interval);
-
-    ui.set_settings_trust_insecure_cert(data.trust_insecure_cert);
 
     ui.set_settings_use_acrylic(
         sanitize_material_effect(data.material_effect.as_str()) == "acrylic",
@@ -652,8 +614,6 @@ fn collect_settings_from_ui(ui: &MainWindow) -> SettingsFormData {
         password: ui.get_settings_password(),
 
         max_image_kb: ui.get_settings_max_image_kb(),
-        sync_interval: ui.get_settings_sync_interval(),
-        trust_insecure_cert: ui.get_settings_trust_insecure_cert(),
 
         material_effect: SharedString::from(if ui.get_settings_use_acrylic() {
             "acrylic"
@@ -667,7 +627,6 @@ fn collect_settings_from_ui(ui: &MainWindow) -> SettingsFormData {
 
 fn settings_form_from_config(cfg: &Config) -> SettingsFormData {
     let max_image = cfg.max_image_kb.clamp(32, 8192);
-    let sync_interval = cfg.sync_interval.clamp(1, 60);
 
     SettingsFormData {
         server_url: cfg.server_url.clone().into(),
@@ -675,9 +634,6 @@ fn settings_form_from_config(cfg: &Config) -> SettingsFormData {
         username: cfg.username.clone().unwrap_or_default().into(),
         password: cfg.password.clone().unwrap_or_default().into(),
         max_image_kb: max_image as i32,
-        sync_interval: sync_interval as i32,
-
-        trust_insecure_cert: cfg.trust_insecure_cert,
 
         material_effect: SharedString::from(sanitize_material_effect(&cfg.material_effect)),
         theme_mode: SharedString::from(sanitize_theme_mode(&cfg.theme_mode)),

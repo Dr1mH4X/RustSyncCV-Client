@@ -6,16 +6,19 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use log::Level;
+use rustls::{ClientConfig, RootCertStore};
+use std::sync::Arc as StdArc;
 use tokio::{
     sync::{broadcast, mpsc},
     task::JoinHandle,
     time::{sleep, Duration},
 };
-use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
-use tokio_tungstenite::{connect_async, Connector, MaybeTlsStream};
+use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::{connect_async, connect_async_tls_with_config, Connector, MaybeTlsStream};
 use tokio_util::sync::CancellationToken;
 use url::Url;
 use uuid::Uuid;
+use webpki_roots::TLS_SERVER_ROOTS;
 
 type WsStream = tokio_tungstenite::WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
@@ -65,7 +68,6 @@ pub enum RuntimeEvent {
 #[derive(Debug, Clone)]
 pub struct StartOptions {
     pub config_dir: PathBuf,
-    pub insecure_override: bool,
 }
 
 enum RuntimeCommand {
@@ -212,10 +214,6 @@ impl RuntimeWorker {
         let cfg = Config::load_from_dir(&options.config_dir)?;
         let server_url = Url::parse(&cfg.server_url)
             .with_context(|| format!("无法解析服务器地址: {}", cfg.server_url))?;
-        let insecure_effective = cfg.trust_insecure_cert || options.insecure_override;
-        if insecure_effective && server_url.scheme() == "wss" {
-            self.emit_log(Level::Warn, "TLS 证书验证已禁用").await;
-        }
 
         self.emit_status("正在连接...").await;
         self.emit_connection(ConnectionStateEvent::Connecting).await;
@@ -263,7 +261,6 @@ impl RuntimeWorker {
                 tx_in,
                 connection_events,
                 connection_cancel,
-                insecure_effective,
             )
             .await;
         });
@@ -326,7 +323,6 @@ async fn run_connection_loop(
     tx_in: mpsc::Sender<ClipboardBroadcastPayload>,
     events: mpsc::Sender<RuntimeEvent>,
     cancel: CancellationToken,
-    insecure_effective: bool,
 ) {
     let reconnect_delay = Duration::from_secs(5);
     let _ = events
@@ -347,8 +343,23 @@ async fn run_connection_loop(
             .send(RuntimeEvent::Status("正在连接服务器".into()))
             .await;
 
-        let connection = if server_url.scheme() == "wss" && insecure_effective {
-            connect_insecure(server_url.clone()).await
+        let connection = if server_url.scheme() == "wss" {
+            // Build rustls ClientConfig with webpki-roots for TLS verification
+            let root_store = RootCertStore::from_iter(TLS_SERVER_ROOTS.iter().cloned());
+            let tls_config = StdArc::new(
+                ClientConfig::builder()
+                    .with_root_certificates(root_store)
+                    .with_no_client_auth(),
+            );
+
+            connect_async_tls_with_config(
+                server_url.as_str(),
+                None,
+                false,
+                Some(Connector::Rustls(tls_config)),
+            )
+            .await
+            .map(|(stream, _)| stream)
         } else {
             connect_async(server_url.as_str())
                 .await
@@ -573,66 +584,4 @@ async fn authenticate_stream(
     }
 
     Ok(())
-}
-
-async fn connect_insecure(url: Url) -> Result<WsStream, tokio_tungstenite::tungstenite::Error> {
-    #[derive(Debug)]
-    struct NoVerify;
-    use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-    use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
-    use rustls::{ClientConfig as RustlsClientConfig, DigitallySignedStruct, SignatureScheme};
-    use std::sync::Arc as StdArc;
-
-    impl ServerCertVerifier for NoVerify {
-        fn verify_server_cert(
-            &self,
-            _end_entity: &CertificateDer<'_>,
-            _intermediates: &[CertificateDer<'_>],
-            _server_name: &ServerName<'_>,
-            _ocsp_response: &[u8],
-            _now: UnixTime,
-        ) -> Result<ServerCertVerified, rustls::Error> {
-            Ok(ServerCertVerified::assertion())
-        }
-
-        fn verify_tls12_signature(
-            &self,
-            _message: &[u8],
-            _cert: &CertificateDer<'_>,
-            _dss: &DigitallySignedStruct,
-        ) -> Result<HandshakeSignatureValid, rustls::Error> {
-            Ok(HandshakeSignatureValid::assertion())
-        }
-
-        fn verify_tls13_signature(
-            &self,
-            _message: &[u8],
-            _cert: &CertificateDer<'_>,
-            _dss: &DigitallySignedStruct,
-        ) -> Result<HandshakeSignatureValid, rustls::Error> {
-            Ok(HandshakeSignatureValid::assertion())
-        }
-
-        fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-            vec![
-                SignatureScheme::ECDSA_NISTP256_SHA256,
-                SignatureScheme::ED25519,
-                SignatureScheme::RSA_PKCS1_SHA256,
-            ]
-        }
-    }
-
-    let builder = RustlsClientConfig::builder().dangerous();
-    let config = builder
-        .with_custom_certificate_verifier(StdArc::new(NoVerify))
-        .with_no_client_auth();
-    let request = url.as_str().into_client_request().unwrap();
-    tokio_tungstenite::connect_async_tls_with_config(
-        request,
-        None,
-        false,
-        Some(Connector::Rustls(StdArc::new(config))),
-    )
-    .await
-    .map(|(stream, _)| stream)
 }
