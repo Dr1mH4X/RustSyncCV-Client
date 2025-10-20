@@ -23,11 +23,9 @@
 
 ```
 server_url = "wss://example.com/ws"
-username = "user"
-password = "pass"
-sync_interval = 5
+username = "username"
+password = "password"
 max_image_kb = 512
-trust_insecure_cert = true
 # material_effect = "acrylic"
 ```
 
