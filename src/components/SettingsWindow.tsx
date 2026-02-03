@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { useTranslation } from "react-i18next";
 import { BaseInput, BaseLabel, cn } from "./ui/Styles";
 
@@ -27,6 +28,7 @@ export default function SettingsWindow() {
   const [languageMode, setLanguageMode] = useState<string>(
     localStorage.getItem("app-language") || "system",
   );
+  const [autoStart, setAutoStart] = useState(false);
 
   useEffect(() => {
     // Load initial settings from Rust backend
@@ -38,6 +40,8 @@ export default function SettingsWindow() {
 
     // Initialize language
     applyLanguage(languageMode);
+
+    isEnabled().then(setAutoStart).catch(console.error);
   }, []);
 
   const applyLanguage = (mode: string) => {
@@ -54,6 +58,20 @@ export default function SettingsWindow() {
     setLanguageMode(lang);
     localStorage.setItem("app-language", lang);
     applyLanguage(lang);
+  };
+
+  const toggleAutoStart = async () => {
+    try {
+      if (autoStart) {
+        await disable();
+      } else {
+        await enable();
+      }
+      setAutoStart(!autoStart);
+    } catch (e) {
+      console.error(e);
+      setError("Failed to toggle auto-start");
+    }
   };
 
   const handleSave = async (data: SettingsForm) => {
@@ -119,6 +137,24 @@ export default function SettingsWindow() {
         </div>
       </div>
 
+      <div className="flex items-center justify-between mb-6">
+        <BaseLabel>{t("settings.auto_start")}</BaseLabel>
+        <button
+          onClick={toggleAutoStart}
+          className={cn(
+            "w-11 h-6 rounded-full transition-colors relative focus:outline-none",
+            autoStart ? "bg-emerald-500" : "bg-slate-700",
+          )}
+        >
+          <div
+            className={cn(
+              "absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform",
+              autoStart ? "translate-x-5" : "translate-x-0",
+            )}
+          />
+        </button>
+      </div>
+
       <div className="space-y-5">
         {/* Server URL */}
         <div>
@@ -168,8 +204,8 @@ export default function SettingsWindow() {
           <BaseLabel>{t("settings.max_image_size")}</BaseLabel>
           <BaseInput
             type="number"
-            min={32}
-            max={8192}
+            min={1}
+            max={524288}
             value={formData.max_image_kb}
             onChange={(e) =>
               handleChange("max_image_kb", parseInt(e.target.value) || 512)

@@ -13,8 +13,12 @@ use simplelog::{
     TerminalMode, WriteLogger,
 };
 use std::fs::File;
-use std::{path::PathBuf, sync::Arc};
-use tauri::{Emitter, Manager, State, WebviewWindow};
+use std::sync::Arc;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow, WindowEvent};
+use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_store::StoreExt;
 use tokio::runtime::Runtime;
 #[cfg(target_os = "windows")]
 use window_vibrancy::{apply_acrylic, apply_mica};
@@ -45,7 +49,6 @@ struct InitialState {
 struct AppState {
     runtime: Arc<Runtime>,
     handle: RuntimeHandle,
-    config_dir: PathBuf,
     // We keep logs in memory to support "clear logs" and initial load
     logs: Mutex<Vec<String>>,
     // Simple state to track paused status for initial load
@@ -84,20 +87,6 @@ impl AppState {
 
 // --- Helper Functions ---
 
-fn resolve_config_dir() -> Result<PathBuf> {
-    let cwd = std::env::current_dir().context("Failed to get current directory")?;
-    if cwd.join("config.toml").exists() {
-        return Ok(cwd);
-    }
-    if let Some(parent) = cwd.parent() {
-        let parent = parent.to_path_buf();
-        if parent.join("config.toml").exists() {
-            return Ok(parent);
-        }
-    }
-    Ok(cwd)
-}
-
 fn settings_form_from_config(cfg: &Config) -> SettingsForm {
     let max_image = cfg
         .max_image_kb
@@ -117,11 +106,21 @@ fn settings_form_from_config(cfg: &Config) -> SettingsForm {
 // --- Commands ---
 
 #[tauri::command]
-async fn get_initial_state(state: State<'_, AppState>) -> Result<InitialState, String> {
-    let config_dir = state.config_dir.clone();
-    let config = Config::load_from_dir(&config_dir)
-        .map(|cfg| settings_form_from_config(&cfg))
-        .unwrap_or_default();
+async fn get_initial_state(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<InitialState, String> {
+    let store = app
+        .store("config.json")
+        .map_err(|e| format!("Store error: {}", e))?;
+    let config_val = store.get("config");
+    let config = if let Some(val) = config_val {
+        serde_json::from_value::<Config>(val)
+            .map(|c| settings_form_from_config(&c))
+            .unwrap_or_default()
+    } else {
+        settings_form_from_config(&Config::default())
+    };
 
     let logs = state.get_logs();
     let paused = state.is_paused();
@@ -187,7 +186,11 @@ fn frontend_log(level: String, message: String) {
 }
 
 #[tauri::command]
-async fn save_settings(form: SettingsForm, state: State<'_, AppState>) -> Result<(), String> {
+async fn save_settings(
+    app: AppHandle,
+    form: SettingsForm,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     let server_url = form.server_url.trim();
     if server_url.is_empty() {
         return Err("Server URL cannot be empty".to_string());
@@ -224,13 +227,15 @@ async fn save_settings(form: SettingsForm, state: State<'_, AppState>) -> Result
         theme_mode: "system".to_string(),
     };
 
-    updated_config
-        .save_to_dir(&state.config_dir)
-        .map_err(|e| e.to_string())?;
+    let store = app
+        .store("config.json")
+        .map_err(|e| format!("Store error: {}", e))?;
+    store.set("config", serde_json::json!(updated_config));
+    store.save().map_err(|e| format!("Save error: {}", e))?;
 
     // Reload runtime
     let options = StartOptions {
-        config_dir: state.config_dir.clone(),
+        config: updated_config,
     };
 
     state
@@ -310,7 +315,6 @@ fn main() -> Result<()> {
     log::info!("Backend initialized");
 
     let runtime = Arc::new(Runtime::new()?);
-    let config_dir = resolve_config_dir()?;
 
     // Spawn core runtime
     let (handle, mut event_rx) = spawn_runtime(&runtime);
@@ -318,33 +322,79 @@ fn main() -> Result<()> {
     let app_state = AppState {
         runtime: runtime.clone(),
         handle: handle.clone(),
-        config_dir: config_dir.clone(),
         logs: Mutex::new(Vec::new()),
         paused: Mutex::new(true),
     };
 
-    // Initialize application logic (auto start)
-    {
-        let start_handle = app_state.handle.clone();
-        let start_conf_dir = app_state.config_dir.clone();
-        app_state.runtime.spawn(async move {
-            let options = StartOptions {
-                config_dir: start_conf_dir,
-            };
-            // Allow some time for UI to potentially be ready
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            if let Err(err) = start_handle.start(options).await {
-                log::error!("Failed to auto-start runtime: {}", err);
-            }
-        });
-    }
-
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec![]),
+        ))
         .manage(app_state)
         .setup(move |app| {
             let app_handle = app.handle().clone();
             let state = app.state::<AppState>();
+
+            // --- Tray Icon ---
+            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+
+            let _tray = TrayIconBuilder::new()
+                .menu(&menu)
+                .icon(app.default_window_icon().unwrap().clone())
+                .on_menu_event(|app: &AppHandle, event| match event.id().as_ref() {
+                    "quit" => app.exit(0),
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray: &tauri::tray::TrayIcon, event| {
+                    if let TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            if window.is_visible().unwrap_or(false) {
+                                let _ = window.hide();
+                            } else {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    }
+                })
+                .build(app)?;
+
+            // --- Config Load & Runtime Start ---
+            let store = app.store("config.json")?;
+            let config_val = store.get("config");
+            let config: Config = if let Some(val) = config_val {
+                serde_json::from_value(val).unwrap_or_default()
+            } else {
+                Config::default()
+            };
+
+            let start_handle = state.handle.clone();
+            let runtime_clone = state.runtime.clone();
+
+            runtime_clone.spawn(async move {
+                let options = StartOptions { config };
+                // Allow some time for UI to potentially be ready
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                if let Err(err) = start_handle.start(options).await {
+                    log::error!("Failed to auto-start runtime: {}", err);
+                }
+            });
 
             // Spawn event listener
             let runtime_clone = state.runtime.clone();
@@ -444,6 +494,14 @@ fn main() -> Result<()> {
             save_settings,
             apply_window_effects
         ])
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    window.hide().unwrap();
+                    api.prevent_close();
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 
