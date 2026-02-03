@@ -25,6 +25,7 @@ export default {
     username: "Username (Required if Token empty)",
     password: "Password",
     max_image_size: "Max Image Size (KB)",
+    auto_start: "Start on Boot",
     loading: "Loading configuration...",
     saved_reloading: "Configuration saved, reloading...",
     error_server_empty: "Server URL cannot be empty",

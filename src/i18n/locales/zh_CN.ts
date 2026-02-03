@@ -25,6 +25,7 @@ export default {
     username: "用户名 (Token 留空时必填)",
     password: "密码",
     max_image_size: "图片大小上限 (KB)",
+    auto_start: "开机自启",
     loading: "正在加载配置...",
     saved_reloading: "配置已保存，正在重新连接...",
     error_server_empty: "服务器地址不能为空",
