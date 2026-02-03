@@ -81,18 +81,25 @@ jobs:
           args: ${{ matrix.args }}
           tagName: ""
 
-      - name: Rename Artifacts
+      - name: Rename and Package Artifacts
         shell: bash
         run: |
           VERSION=$(jq -r .version src-tauri/tauri.conf.json)
           mkdir -p ./final_artifacts
 
+          BASE_NAME="RustSyncCV v${VERSION} ${{ matrix.os_name }}-${{ matrix.arch }}"
+
           if [[ "${{ matrix.os_name }}" == "windows" ]]; then
-            cp src-tauri/target/release/rust-sync-cv-client.exe "./final_artifacts/RustSyncCV v${VERSION} windows-amd64.exe"
+            EXE_FILE="src-tauri/target/release/rust-sync-cv-client.exe"
+            7z a -t7z -mx=9 "./final_artifacts/${BASE_NAME}.7z" "./${EXE_FILE}"
+
           elif [[ "${{ matrix.os_name }}" == "linux" ]]; then
-            cp src-tauri/target/release/bundle/appimage/*.AppImage "./final_artifacts/RustSyncCV v${VERSION} linux-amd64.AppImage"
+            APPIMAGE_PATH=$(ls src-tauri/target/release/bundle/appimage/*.AppImage)
+            GZIP=-9 tar -czf "./final_artifacts/${BASE_NAME}.tar.gz" -C "$(dirname "$APPIMAGE_PATH")" "$(basename "$APPIMAGE_PATH")"
+
           elif [[ "${{ matrix.os_name }}" == "macos" ]]; then
-            cp src-tauri/target/**/release/bundle/dmg/*.dmg "./final_artifacts/RustSyncCV v${VERSION} macos-arm64.dmg"
+            DMG_PATH=$(ls src-tauri/target/**/release/bundle/dmg/*.dmg)
+            GZIP=-9 tar -czf "./final_artifacts/${BASE_NAME}.tar.gz" -C "$(dirname "$DMG_PATH")" "$(basename "$DMG_PATH")"
           fi
 
       - name: Upload Artifacts
