@@ -2,14 +2,20 @@
 - [x] 系统托盘
 - [x] 迁移至 Tauri
 
+## License
+
+[MIT](./LICENSE)
+
 ## 开发指南
 
 [开发手册](./doc/dev/development.md)。
 
-## Star History
+## ❤️
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Dr1mH4X/RustSyncCV-Client,Dr1mH4X/RustSyncCV-Server&type=Date)](https://www.star-history.com/#Dr1mH4X/RustSyncCV-Client&Dr1mH4X/RustSyncCV-Server&Date)
+<a href="https://github.com/RustSync/RustSyncCV-Client/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=RustSync/RustSyncCV-Client" />
+</a>
 
-## License
+`## Star History
 
-[MIT](./LICENSE)
+[![Star History Chart](https://api.star-history.com/svg?repos=Dr1mH4X/RustSyncCV-Client,Dr1mH4X/RustSyncCV-Server&type=Date)](https://www.star-history.com/#Dr1mH4X/RustSyncCV-Client&Dr1mH4X/RustSyncCV-Server&Date)`
