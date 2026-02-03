@@ -9,7 +9,6 @@ permissions:
   contents: write
 
 jobs:
-  # 步骤 1: 编译所有平台的产物
   buildapp:
     strategy:
       fail-fast: true
@@ -30,7 +29,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4 # 升级到 v4
+        uses: pnpm/action-setup@v4
         with:
           version: 9
 
@@ -38,12 +37,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: "pnpm"
+          cache: "pnpm" # 自动缓存
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
+
+      # 缓存
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
 
       - name: Install dependencies (ubuntu only)
         if: matrix.platform == 'ubuntu-latest'
@@ -54,22 +59,14 @@ jobs:
       - name: Install Frontend Dependencies
         run: pnpm install
 
-      # 关键修复步骤：在构建前确保图标是正方形并生成全套图标
       - name: Fix and Generate Icons
         shell: bash
         run: |
-          # 检查原始图片是否存在
           SOURCE_IMG="src-tauri/icons/icon.png"
           if [ -f "$SOURCE_IMG" ]; then
-            echo "Processing icons..."
-            # 使用 tauri-cli 重新生成所有格式 (它会自动处理一些常见的格式问题)
-            # 注意：如果图片不是正方形，这一步在 linux/macos 上可以通过 imagemagick 预处理
             pnpm tauri icon $SOURCE_IMG
-          else
-            echo "Warning: Source icon not found at $SOURCE_IMG"
           fi
 
-      # 运行编译
       - name: Build Tauri App
         uses: tauri-apps/tauri-action@v0
         env:
@@ -78,7 +75,6 @@ jobs:
           args: ${{ matrix.args }}
           tagName: ""
 
-      # 将编译好的产物暂存到 Artifacts
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -88,7 +84,6 @@ jobs:
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/**/release/bundle/dmg/*.dmg
 
-  # 步骤 2: 汇总产物并发布 Release
   publish-release:
     needs: buildapp
     runs-on: ubuntu-latest
