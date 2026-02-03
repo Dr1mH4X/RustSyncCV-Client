@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RustSyncCV</title>
+    <style>
+      /* Base resets for Tauri apps to feel more native */
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden; /* App handles scrolling internally */
+        font-family: 'Segoe UI', sans-serif;
+        user-select: none; /* Prevent text selection like a native app */
+        -webkit-user-select: none;
+        background-color: transparent; /* Allow window vibrancy to show through */
+      }
+      #root {
+        height: 100vh;
+        width: 100vw;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

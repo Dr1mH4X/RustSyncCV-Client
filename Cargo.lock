@@ -3,28 +3,6 @@
 version = 4
 
 [[package]]
-name = "RustSyncCV-Client-CLI"
-version = "0.4.2"
-dependencies = [
- "anyhow",
- "arboard",
- "base64",
- "dirs",
- "futures",
- "futures-util",
- "image",
- "rustls",
- "serde",
- "serde_json",
- "tokio",
- "tokio-tungstenite",
- "toml 0.9.7",
- "url",
- "uuid",
- "webpki-roots 0.26.11",
-]
-
-[[package]]
 name = "RustSyncCV-Client-GUI"
 version = "0.4.5"
 dependencies = [
@@ -5284,7 +5262,6 @@ dependencies = [
  "io-uring",
  "libc",
  "mio 1.0.4",
- "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "slab",
