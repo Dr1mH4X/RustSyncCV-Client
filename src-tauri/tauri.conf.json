@@ -31,6 +31,10 @@
   "bundle": {
     "active": true,
     "category": "Utility",
-    "icon": ["../assets/icos/ico.ico"]
+    "icon": ["icons/icon.png", "icons/icon.icns", "icons/icon.ico"],
+    "targets": ["nsis", "appimage", "dmg"],
+    "macOS": {
+      "signingIdentity": null
+    }
   }
 }

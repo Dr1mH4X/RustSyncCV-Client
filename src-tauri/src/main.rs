@@ -248,17 +248,17 @@ async fn save_settings(
 }
 
 #[tauri::command]
-fn apply_window_effects(window: WebviewWindow, effect: String, theme: String) {
+fn apply_window_effects(window: WebviewWindow, _effect: String, _theme: String) {
     #[cfg(target_os = "windows")]
     {
         // Basic theme handling
         let _ = window.set_skip_taskbar(false);
 
         // Apply effect
-        if effect == "acrylic" {
+        if _effect == "acrylic" {
             let _ = apply_acrylic(&window, Some((0, 0, 0, 0)));
         } else {
-            let _ = apply_mica(&window, Some(theme == "dark"));
+            let _ = apply_mica(&window, Some(_theme == "dark"));
         }
     }
 }
