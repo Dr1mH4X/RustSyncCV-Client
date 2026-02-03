@@ -1,6 +1,10 @@
 ## TODO
-- [x] system-tray
-- [x] to tauri 
+- [x] 系统托盘
+- [x] 迁移至 Tauri
+
+## 开发指南
+
+[开发手册](./doc/dev/development.md)。
 
 ## Star History
 
