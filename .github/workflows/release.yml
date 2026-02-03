@@ -18,7 +18,7 @@ jobs:
           - platform: "macos-latest"
             args: "--target aarch64-apple-darwin"
             artifact_name: "macos-arm"
-          - platform: "ubuntu-22.04"
+          - platform: "ubuntu-latest"
             args: ""
             artifact_name: "linux-x64"
           - platform: "windows-latest"
@@ -46,7 +46,7 @@ jobs:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
+        if: matrix.platform == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
@@ -61,7 +61,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: ${{ matrix.args }}
-          # 关键：这里设置不自动创建 release
           tagName: ""
 
       # 将编译好的产物暂存到 Artifacts
@@ -70,10 +69,9 @@ jobs:
         with:
           name: tauri-build-${{ matrix.artifact_name }}
           path: |
-            src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/**/release/bundle/dmg/*.dmg
+            src-tauri/target/**/release/rust-sync-cv-client.exe
+            src-tauri/target/**/release/rust-sync-cv-client
 
   # 步骤 2: 汇总产物并发布 Release
   publish-release:
