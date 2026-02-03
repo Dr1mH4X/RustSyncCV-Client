@@ -1,17 +1,26 @@
+# tauri
 /target
 **/target/
 **/dist/
 **/release/
 node_modules/
+src-tauri/gen/schemas/
+
+# editor
 .vscode/
 .idea/
 **/.vscode/
 **/.idea/
 *.code-workspace
+
+# temp
 *.log
 *.tmp
 *.bak
 *.swp
+
+# system
 .DS_Store
 Thumbs.db
+
 **/*.rs.bk
