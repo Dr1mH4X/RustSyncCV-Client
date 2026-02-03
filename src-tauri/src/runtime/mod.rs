@@ -1,7 +1,4 @@
-use std::{
-    path::PathBuf,
-    sync::{atomic::AtomicBool, Arc},
-};
+use std::sync::{atomic::AtomicBool, Arc};
 
 use anyhow::{anyhow, Context, Result};
 use futures_util::{SinkExt, StreamExt};
@@ -67,7 +64,7 @@ pub enum RuntimeEvent {
 
 #[derive(Debug, Clone)]
 pub struct StartOptions {
-    pub config_dir: PathBuf,
+    pub config: config::Config,
 }
 
 enum RuntimeCommand {
@@ -213,7 +210,7 @@ impl RuntimeWorker {
         }
         self.paused = false;
 
-        let cfg = Config::load_from_dir(&options.config_dir)?;
+        let cfg = options.config.clone();
         let server_url = Url::parse(&cfg.server_url)
             .with_context(|| format!("无法解析服务器地址: {}", cfg.server_url))?;
 

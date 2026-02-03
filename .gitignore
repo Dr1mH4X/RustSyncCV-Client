@@ -4,7 +4,7 @@
 **/dist/
 **/release/
 node_modules/
-src-tauri/gen/schemas/
+src-tauri/gen/schemas
 
 # editor
 .vscode/
