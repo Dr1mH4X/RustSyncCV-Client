@@ -6,7 +6,7 @@
 
 [MIT](./LICENSE)
 
-## 开发指南
+## 开发
 
 [开发手册](./doc/dev/development.md)。
 
