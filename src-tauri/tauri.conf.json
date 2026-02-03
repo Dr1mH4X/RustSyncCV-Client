@@ -16,10 +16,10 @@
         "fullscreen": false,
         "resizable": true,
         "title": "RustSyncCV",
-        "width": 520,
-        "height": 420,
-        "minWidth": 400,
-        "minHeight": 360,
+        "width": 360,
+        "height": 240,
+        "minWidth": 360,
+        "minHeight": 240,
         "transparent": true,
         "decorations": true
       }
