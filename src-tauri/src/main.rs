@@ -248,17 +248,17 @@ async fn save_settings(
 }
 
 #[tauri::command]
-fn apply_window_effects(window: WebviewWindow, _effect: String, _theme: String) {
+fn apply_window_effects(_window: WebviewWindow, _effect: String, _theme: String) {
     #[cfg(target_os = "windows")]
     {
         // Basic theme handling
-        let _ = window.set_skip_taskbar(false);
+        let _ = _window.set_skip_taskbar(false);
 
         // Apply effect
         if _effect == "acrylic" {
-            let _ = apply_acrylic(&window, Some((0, 0, 0, 0)));
+            let _ = apply_acrylic(&_window, Some((0, 0, 0, 0)));
         } else {
-            let _ = apply_mica(&window, Some(_theme == "dark"));
+            let _ = apply_mica(&_window, Some(_theme == "dark"));
         }
     }
 }
@@ -475,10 +475,9 @@ fn main() -> Result<()> {
             });
 
             // Apply initial window effect (Mica/Dark)
-            let window = app.get_webview_window("main").unwrap();
-
             #[cfg(target_os = "windows")]
             {
+                let window = app.get_webview_window("main").unwrap();
                 // Default to mica/system
                 let _ = apply_mica(&window, None);
             }
