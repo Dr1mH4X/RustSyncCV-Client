@@ -69,9 +69,9 @@ jobs:
         with:
           name: tauri-build-${{ matrix.artifact_name }}
           path: |
-            src-tauri/target/**/release/bundle/dmg/*.dmg
             src-tauri/target/**/release/rust-sync-cv-client.exe
-            src-tauri/target/**/release/rust-sync-cv-client
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/**/release/bundle/dmg/*.dmg
 
   # 步骤 2: 汇总产物并发布 Release
   publish-release:
