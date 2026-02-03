@@ -3,4 +3,4 @@ username = "username"
 password = "password"
 max_image_kb = 512
 material_effect = "acrylic"
-theme_mode = "system"
+theme_mode = "light"

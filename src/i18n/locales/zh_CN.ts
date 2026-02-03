@@ -1,0 +1,37 @@
+export default {
+  status: {
+    label: "状态",
+    paused: "已暂停",
+    running: "运行中",
+    ready: "准备启动",
+    error: "错误",
+  },
+  action: {
+    resume: "恢复同步",
+    pause: "暂停同步",
+    settings: "设置",
+    open_logs: "打开日志",
+    close: "关闭",
+    cancel: "取消",
+    save: "保存",
+  },
+  settings: {
+    title: "设置",
+    window_title: "RustSyncCV - 设置",
+    language: "语言",
+    system: "跟随系统",
+    server_url: "服务器地址",
+    token: "认证 Token (可选)",
+    username: "用户名 (Token 留空时必填)",
+    password: "密码",
+    max_image_size: "图片大小上限 (KB)",
+    loading: "正在加载配置...",
+    saved_reloading: "配置已保存，正在重新连接...",
+    error_server_empty: "服务器地址不能为空",
+    error_auth_missing: "请填写 Token 或用户名/密码",
+  },
+  logs: {
+    title: "日志",
+    waiting: "等待活动...",
+  },
+};

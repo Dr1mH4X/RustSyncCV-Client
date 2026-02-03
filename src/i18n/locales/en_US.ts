@@ -1,0 +1,37 @@
+export default {
+  status: {
+    label: "Status",
+    paused: "Paused",
+    running: "Running",
+    ready: "Ready to start",
+    error: "Error",
+  },
+  action: {
+    resume: "Resume Sync",
+    pause: "Pause Sync",
+    settings: "Settings",
+    open_logs: "Open Logs",
+    close: "Close",
+    cancel: "Cancel",
+    save: "Save",
+  },
+  settings: {
+    title: "Settings",
+    window_title: "RustSyncCV - Settings",
+    language: "Language",
+    system: "System",
+    server_url: "Server URL",
+    token: "Auth Token (Optional)",
+    username: "Username (Required if Token empty)",
+    password: "Password",
+    max_image_size: "Max Image Size (KB)",
+    loading: "Loading configuration...",
+    saved_reloading: "Configuration saved, reloading...",
+    error_server_empty: "Server URL cannot be empty",
+    error_auth_missing: "Please provide either Token or Username/Password",
+  },
+  logs: {
+    title: "Logs",
+    waiting: "Waiting for activity...",
+  },
+};
