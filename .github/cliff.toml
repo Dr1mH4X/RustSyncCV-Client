@@ -16,15 +16,13 @@ body = """
 
 {% for group, commits in commits | group_by(attribute="group") %}
     ### {{ group | striptags | trim | upper_first }}
-    {% for commit in commits | filter(attribute="scope") | sort(attribute="scope") %}
-        {{ self::print_commit(commit=commit) }}
-    {%- endfor %}
     {% for commit in commits %}
-        {%- if not commit.scope -%}
-            {{ self::print_commit(commit=commit) }}
-        {% endif -%}
-    {% endfor -%}
-{% endfor -%}
+        - {% if commit.scope %}**({{ commit.scope }})** {% endif %}\
+          {{ commit.message | split(pat="\n") | first | upper_first }} \
+          ([{{ commit.id | truncate(length=7, end="") }}]({{ self::remote_url() }}/commit/{{ commit.id }})) \
+          by @{{ commit.author.name }}
+    {% endfor %}
+{% endfor %}
 
 {%- if github -%}
 {% if github.contributors | filter(attribute="is_first_time", value=true) | length != 0 %}
@@ -39,38 +37,34 @@ body = """
 
 footer = """
 ---
-**完整ChangeLog**: {{ self::remote_url() }}/compare/{{ previous.version }}...{{ version }}
+**完整变更列表**: {{ self::remote_url() }}/compare/{{ previous.version }}...{{ version }}
 """
 
 [git]
-# 过滤提交
-conventional_commits = true # 使用约定式提交格式
-filter_unconventional = false # 不过滤非约定式提交
-# 启用完整的 commit 信息
+conventional_commits = true
+filter_unconventional = false
 split_commits = false
-# 保留完整的 commit body
-protect_breaking_commits = false
 commit_parsers = [
-    { message = "^feat", group = "<!-- 0 -->✨ 新功能" },
-    { message = "^fix", group = "<!-- 1 -->🐛 Bug修复" },
-    { message = "^docs", group = "<!-- 4 -->📚 文档" },
-    { message = "^perf", group = "<!-- 3 -->🚀 性能优化" },
-    { message = "^refactor", group = "<!-- 2 -->🚜 代码重构" },
-    { message = "^style", group = "<!-- 5 -->🎨 样式" },
-    { message = "^test", group = "<!-- 6 -->🧪 测试" },
+    { message = "^feat", group = "✨ 新功能" },
+    { message = "^fix", group = "🐛 Bug 修复" },
+    { message = "^doc", group = "📚 文档" },
+    { message = "^perf", group = "🚀 性能优化" },
+    { message = "^refactor", group = "🚜 代码重构" },
+    { message = "^style", group = "🎨 样式" },
+    { message = "^test", group = "🧪 测试" },
     { message = "^chore\\(deps\\)", group = "📦 依赖更新" },
-    { message = "^chore", group = "<!-- 8 -->🔧 日常维护" },
-    { message = "^ci", group = "<!-- 7 -->⚙️ 持续集成" },
-    { body = ".*security", group = "<!-- 9 -->🔒 安全" },
-    { message = "^revert", group = "<!-- 10 -->◀️ 撤销" },
+    { message = "^chore", group = "🔧 日常维护" },
+    { message = "^ci", group = "⚙️ 持续集成" },
+    { body = ".*security", group = "🔒 安全" },
+    { message = "^revert", group = "◀️ 撤销" },
+    { message = ".*", group = "其他变更" },
 ]
-
-# 忽略这些提交
-ignore_tags = "rc"
-
-# 排序规则
+# 保护打破兼容性的改动
+protect_breaking_commits = false
+# 忽略的标签
+ignore_tags = ""
+# 排序
 sort_commits = "oldest"
 
-# 启用GitHub集成
 [git.github]
 commits = true
