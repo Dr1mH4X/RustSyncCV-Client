@@ -10,19 +10,26 @@ permissions:
 
 jobs:
   buildapp:
+    name: Build ${{ matrix.job }}
     strategy:
       fail-fast: true
       matrix:
         include:
-          - platform: "macos-latest"
+          - job: "win-amd64"
+            platform: "windows-latest"
+            os_name: "windows"
+            arch: "amd64"
+            args: ""
+          - job: "linux-amd64"
+            platform: "ubuntu-latest"
+            os_name: "linux"
+            arch: "amd64"
+            args: ""
+          - job: "mac-arm64"
+            platform: "macos-latest"
+            os_name: "macos"
+            arch: "arm64"
             args: "--target aarch64-apple-darwin"
-            artifact_name: "macos-arm"
-          - platform: "ubuntu-latest"
-            args: ""
-            artifact_name: "linux-x64"
-          - platform: "windows-latest"
-            args: ""
-            artifact_name: "windows-x64"
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -37,14 +44,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: "pnpm" # 自动缓存
+          cache: "pnpm"
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
 
-      # 缓存
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
@@ -75,14 +81,25 @@ jobs:
           args: ${{ matrix.args }}
           tagName: ""
 
+      - name: Rename Artifacts
+        shell: bash
+        run: |
+          VERSION=$(jq -r .version src-tauri/tauri.conf.json)
+          mkdir -p ./final_artifacts
+
+          if [[ "${{ matrix.os_name }}" == "windows" ]]; then
+            cp src-tauri/target/release/rust-sync-cv-client.exe "./final_artifacts/RustSyncCV v${VERSION} windows-amd64.exe"
+          elif [[ "${{ matrix.os_name }}" == "linux" ]]; then
+            cp src-tauri/target/release/bundle/appimage/*.AppImage "./final_artifacts/RustSyncCV v${VERSION} linux-amd64.AppImage"
+          elif [[ "${{ matrix.os_name }}" == "macos" ]]; then
+            cp src-tauri/target/**/release/bundle/dmg/*.dmg "./final_artifacts/RustSyncCV v${VERSION} macos-arm64.dmg"
+          fi
+
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: tauri-build-${{ matrix.artifact_name }}
-          path: |
-            src-tauri/target/**/release/rust-sync-cv-client.exe
-            src-tauri/target/release/bundle/appimage/*.AppImage
-            src-tauri/target/**/release/bundle/dmg/*.dmg
+          name: tauri-build-${{ matrix.job }}
+          path: ./final_artifacts/*
 
   publish-release:
     needs: buildapp
