@@ -1,7 +1,4 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::Path};
 
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -36,6 +33,9 @@ pub struct Config {
 }
 
 impl Config {
+    pub const MIN_IMAGE_KB: u64 = 32;
+    pub const MAX_IMAGE_KB: u64 = 8192;
+
     pub fn load_from_dir(base_dir: &Path) -> Result<Self> {
         let config_path = base_dir.join("config.toml");
         if !config_path.exists() {
@@ -61,12 +61,6 @@ server_url = "wss://example.com/ws"
         let cfg: Config = toml::from_str(&content)
             .with_context(|| format!("解析配置文件失败: {:?}", config_path))?;
         Ok(cfg)
-    }
-
-    pub fn locate_and_load() -> Result<(Self, PathBuf)> {
-        let cwd = std::env::current_dir().context("获取当前工作目录失败")?;
-        let cfg = Self::load_from_dir(&cwd)?;
-        Ok((cfg, cwd))
     }
 
     pub fn save_to_dir(&self, base_dir: &Path) -> Result<()> {

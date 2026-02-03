@@ -76,6 +76,7 @@ enum RuntimeCommand {
     Pause,
     Resume,
 
+    #[allow(dead_code)]
     Shutdown,
 }
 
@@ -110,9 +111,10 @@ impl RuntimeHandle {
         self.command_tx
             .send(RuntimeCommand::Reload(options))
             .await
-            .context("发送重新加载命令失败")
+            .context("Failed to send reload command")
     }
 
+    #[allow(dead_code)]
     pub async fn shutdown(&self) -> Result<()> {
         self.command_tx
             .send(RuntimeCommand::Shutdown)
@@ -479,7 +481,7 @@ async fn run_connection_loop(
             .await;
         let _ = events
             .send(RuntimeEvent::Status(format!(
-                "{} 秒后重连",
+                "Reconnecting in {}s",
                 reconnect_delay.as_secs()
             )))
             .await;

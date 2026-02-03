@@ -8,6 +8,7 @@ pub const CONTENT_TYPE_TEXT: &str = "text/plain";
 pub const CONTENT_TYPE_IMAGE_PNG: &str = "image/png";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct AuthRequest {
     #[serde(rename = "type")]
     pub msg_type: String,
@@ -15,6 +16,7 @@ pub struct AuthRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct AuthRequestPayload {
     // Optional token or username/password
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -70,6 +72,7 @@ pub struct ClipboardBroadcastPayload {
 // 客户端发送的消息结构
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", content = "payload")]
+#[allow(dead_code)]
 pub enum ClientMessage {
     // 文本消息
     #[serde(rename = "text")]
