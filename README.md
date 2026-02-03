@@ -1,5 +1,5 @@
 ## TODO
-- [ ] system-tray
+- [x] system-tray
 - [x] to tauri 
 
 ## 开始前
