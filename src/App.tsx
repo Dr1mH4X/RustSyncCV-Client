@@ -9,11 +9,6 @@ import SettingsWindow, { type SettingsForm } from "./components/SettingsWindow";
 
 // --- Types ---
 
-interface LogEntryPayload {
-  line: string;
-  level: string;
-}
-
 interface ConnectionStatePayload {
   paused: boolean;
   state: string;
