@@ -3654,7 +3654,7 @@ dependencies = [
 
 [[package]]
 name = "rust-sync-cv-client"
-version = "0.5.0"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "arboard",
