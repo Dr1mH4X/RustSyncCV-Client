@@ -23,7 +23,7 @@ interface InitialState {
 // --- Main App ---
 
 export default function App() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [isSettingsWindow, setIsSettingsWindow] = useState(false);
   const [paused, setPaused] = useState(true);
   const [statusText, setStatusText] = useState("");
@@ -42,6 +42,7 @@ export default function App() {
     invoke<InitialState>("get_initial_state")
       .then((state) => {
         setPaused(state.paused);
+        applyLanguage(state.config.language);
         invoke("apply_window_effects", {
           effect: state.config.material_effect,
           theme: state.config.theme_mode,
@@ -60,11 +61,29 @@ export default function App() {
       },
     );
 
+    const unlistenConfig = listen<SettingsForm>("config-changed", (event) => {
+      applyLanguage(event.payload.language);
+      invoke("apply_window_effects", {
+        effect: event.payload.material_effect,
+        theme: event.payload.theme_mode,
+      });
+    });
+
     return () => {
       unlistenStatus.then((f) => f());
       unlistenConnection.then((f) => f());
+      unlistenConfig.then((f) => f());
     };
   }, [isSettingsWindow]);
+
+  const applyLanguage = (mode: string) => {
+    if (mode === "system") {
+      const sysLang = navigator.language.split("-")[0];
+      i18n.changeLanguage(sysLang === "zh" ? "zh" : "en");
+    } else {
+      i18n.changeLanguage(mode);
+    }
+  };
 
   const handleTogglePause = async () => {
     try {

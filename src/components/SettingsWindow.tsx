@@ -14,6 +14,7 @@ export interface SettingsForm {
   max_image_kb: number;
   material_effect: string;
   theme_mode: string;
+  language: string;
 }
 
 interface InitialState {
@@ -24,10 +25,6 @@ export default function SettingsWindow() {
   const { t, i18n } = useTranslation();
   const [formData, setFormData] = useState<SettingsForm | null>(null);
   const [error, setError] = useState("");
-  // Retrieve language preference from localStorage or default to system
-  const [languageMode, setLanguageMode] = useState<string>(
-    localStorage.getItem("app-language") || "system",
-  );
   const [autoStart, setAutoStart] = useState(false);
 
   useEffect(() => {
@@ -35,11 +32,9 @@ export default function SettingsWindow() {
     invoke<InitialState>("get_initial_state")
       .then((state) => {
         setFormData(state.config);
+        applyLanguage(state.config.language);
       })
       .catch((err) => console.error("Failed to load settings:", err));
-
-    // Initialize language
-    applyLanguage(languageMode);
 
     isEnabled().then(setAutoStart).catch(console.error);
   }, []);
@@ -55,9 +50,12 @@ export default function SettingsWindow() {
   };
 
   const changeLanguage = (lang: string) => {
-    setLanguageMode(lang);
-    localStorage.setItem("app-language", lang);
     applyLanguage(lang);
+    if (formData) {
+      const newData = { ...formData, language: lang };
+      setFormData(newData);
+      handleSave(newData);
+    }
   };
 
   const toggleAutoStart = async () => {
@@ -104,14 +102,14 @@ export default function SettingsWindow() {
 
   if (!formData) {
     return (
-      <div className="flex items-center justify-center h-screen bg-slate-900/60 text-slate-400 text-sm">
+      <div className="flex items-center justify-center h-screen bg-slate-900/60 text-slate-200 text-sm">
         {t("settings.loading")}
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen bg-slate-900/60 p-6 overflow-y-auto select-none">
+    <div className="flex flex-col h-screen bg-slate-900/60 p-6 overflow-y-auto select-none text-slate-200">
       {/* Language Switcher */}
       <div className="space-y-2 mb-6">
         <BaseLabel>{t("settings.language")}</BaseLabel>
@@ -122,9 +120,9 @@ export default function SettingsWindow() {
               onClick={() => changeLanguage(lang)}
               className={cn(
                 "px-3 py-2 rounded-lg text-sm transition-all border",
-                languageMode === lang
+                formData.language === lang
                   ? "bg-blue-500/20 text-blue-100 border-blue-500/30 font-medium"
-                  : "bg-slate-800/40 text-slate-500 border-transparent hover:bg-slate-800/60 hover:text-slate-300",
+                  : "bg-slate-800/40 text-slate-400 border-transparent hover:bg-slate-800/60 hover:text-slate-200",
               )}
             >
               {lang === "system"
