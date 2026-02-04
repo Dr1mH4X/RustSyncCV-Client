@@ -114,7 +114,7 @@ export default function SettingsWindow() {
       <div className="space-y-2 mb-6">
         <BaseLabel>{t("settings.language")}</BaseLabel>
         <div className="grid grid-cols-3 gap-2">
-          {["system", "en", "zh"].map((lang) => (
+          {["system", "zh", "en"].map((lang) => (
             <button
               key={lang}
               onClick={() => changeLanguage(lang)}
