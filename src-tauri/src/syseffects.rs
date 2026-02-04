@@ -26,10 +26,12 @@ pub fn apply_window_effects(window: WebviewWindow, effect: String) {
         if effect == "acrylic" {
             let _ = apply_vibrancy(
                 &window,
-                NSVisualEffectMaterial::HudWindow,
+                NSVisualEffectMaterial::UnderWindowBackground,
                 Some(NSVisualEffectState::Active),
-                Some(10.0),
+                None,
             );
+        } else {
+            let _ = window_vibrancy::clear_vibrancy(&window);
         }
     }
 }
