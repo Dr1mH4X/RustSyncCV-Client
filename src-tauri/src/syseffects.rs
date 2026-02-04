@@ -3,6 +3,9 @@ use tauri::WebviewWindow;
 #[cfg(target_os = "windows")]
 use window_vibrancy::{apply_acrylic, clear_acrylic};
 
+#[cfg(target_os = "macos")]
+use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
+
 #[tauri::command]
 pub fn apply_window_effects(window: WebviewWindow, effect: String) {
     #[cfg(target_os = "windows")]
@@ -10,12 +13,23 @@ pub fn apply_window_effects(window: WebviewWindow, effect: String) {
         let _ = window.set_skip_taskbar(false);
 
         if effect == "acrylic" {
-            // Try to apply acrylic. If it fails (unsupported platform), clear effects.
             if apply_acrylic(&window, Some((0, 0, 0, 0))).is_err() {
                 let _ = clear_acrylic(&window);
             }
         } else {
             let _ = clear_acrylic(&window);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if effect == "acrylic" {
+            let _ = apply_vibrancy(
+                &window,
+                NSVisualEffectMaterial::HudWindow,
+                Some(NSVisualEffectState::Active),
+                Some(10.0),
+            );
         }
     }
 }
