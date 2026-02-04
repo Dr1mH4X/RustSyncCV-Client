@@ -4,6 +4,7 @@ version = "0.5.0"
 description = "RustSyncCV Client"
 authors = ["Author"]
 edition = "2021"
+build = "build.rs"
 
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }
@@ -15,8 +16,6 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 window-vibrancy = "0.5"
 window-shadows = "0.2"
-
-# Original Dependencies
 tokio = { version = "1.47", features = ["rt-multi-thread", "macros", "process", "sync", "time", "io-util", "net"] }
 tokio-tungstenite = { version = "0.27", features = ["__rustls-tls"] }
 futures-util = "0.3"
@@ -36,11 +35,10 @@ parking_lot = "0.12"
 notify = "6.1"
 log = "0.4"
 simplelog = "0.12"
-tauri-plugin-store = "2.4.2"
+tauri-plugin-store = "2"
 tauri-plugin-autostart = "2.5.1"
 
 [features]
-# custom-protocol is handled by tauri config in v2
 custom-protocol = []
 
 [target.'cfg(windows)'.dependencies]
