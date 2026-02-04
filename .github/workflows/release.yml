@@ -183,7 +183,10 @@ jobs:
         id: git-cliff
         with:
           config: cliff.toml
-          args: --latest --strip header
+          args: >
+            ${{ github.event_name == 'workflow_dispatch'
+                && '--unreleased --strip header'
+                || '--latest --strip header' }}
         env:
           GITHUB_REPO: ${{ github.repository }}
 
