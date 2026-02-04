@@ -84,9 +84,8 @@ jobs:
       - name: Rename and Package Artifacts
         shell: bash
         run: |
-          VERSION=$(jq -r .version src-tauri/tauri.conf.json)
+          VERSION=$(jq -r .version package.json)
           mkdir -p ./final_artifacts
-
           BASE_NAME="RustSyncCV v${VERSION} ${{ matrix.os_name }}-${{ matrix.arch }}"
 
           if [[ "${{ matrix.os_name }}" == "windows" ]]; then
@@ -98,8 +97,64 @@ jobs:
             GZIP=-9 tar -czf "./final_artifacts/${BASE_NAME}.tar.gz" -C "$(dirname "$APPIMAGE_PATH")" "$(basename "$APPIMAGE_PATH")"
 
           elif [[ "${{ matrix.os_name }}" == "macos" ]]; then
-            DMG_PATH=$(ls src-tauri/target/**/release/bundle/dmg/*.dmg)
-            GZIP=-9 tar -czf "./final_artifacts/${BASE_NAME}.tar.gz" -C "$(dirname "$DMG_PATH")" "$(basename "$DMG_PATH")"
+            brew install create-dmg
+            if [ -f "src-tauri/icons/icon.icns" ]; then
+              cp src-tauri/icons/icon.icns ./app.icns
+            else
+              mkdir -p app.iconset
+              sips -z 512 512 src-tauri/icons/icon.png --out app.iconset/icon_512x512.png
+              iconutil -c icns app.iconset -o app.icns
+            fi
+
+            APP_NAME="RustSyncCV.app"
+            mkdir -p "$APP_NAME/Contents/MacOS"
+            mkdir -p "$APP_NAME/Contents/Resources"
+            BINARY_SOURCE="src-tauri/target/aarch64-apple-darwin/release/rust-sync-cv-client"
+            if [ ! -f "$BINARY_SOURCE" ]; then
+                BINARY_SOURCE=$(ls src-tauri/target/release/rust-sync-cv-client 2>/dev/null || ls src-tauri/target/*/release/rust-sync-cv-client | head -n 1)
+            fi
+            cp "$BINARY_SOURCE" "$APP_NAME/Contents/MacOS/RustSyncCV"
+            cp app.icns "$APP_NAME/Contents/Resources/"
+
+            cat > "$APP_NAME/Contents/Info.plist" <<EOF
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+                <key>CFBundleExecutable</key>
+                <string>RustSyncCV</string>
+                <key>CFBundleIconFile</key>
+                <string>app.icns</string>
+                <key>CFBundleIdentifier</key>
+                <string>com.rustsynccv.app</string>
+                <key>CFBundleName</key>
+                <string>RustSyncCV</string>
+                <key>CFBundlePackageType</key>
+                <string>APPL</string>
+                <key>CFBundleShortVersionString</key>
+                <string>$VERSION</string>
+                <key>CFBundleVersion</key>
+                <string>$VERSION</string>
+                <key>LSMinimumSystemVersion</key>
+                <string>10.13</string>
+            </dict>
+            </plist>
+            EOF
+
+            chmod +x "$APP_NAME/Contents/MacOS/RustSyncCV"
+            codesign --force --deep --sign - "$APP_NAME"
+
+            create-dmg \
+              --volname "RustSyncCV Installer" \
+              --volicon "app.icns" \
+              --window-pos 200 120 \
+              --window-size 800 400 \
+              --icon-size 100 \
+              --icon "$APP_NAME" 200 190 \
+              --hide-extension "$APP_NAME" \
+              --app-drop-link 600 185 \
+              "./final_artifacts/${BASE_NAME}.dmg" \
+              "$APP_NAME"
           fi
 
       - name: Upload Artifacts
@@ -117,10 +172,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get version from tauri.conf.json
+      - name: Get version
         id: version
         run: |
-          VERSION=$(jq -r .version src-tauri/tauri.conf.json)
+          VERSION=$(jq -r .version package.json)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Generate Changelog

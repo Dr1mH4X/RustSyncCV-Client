@@ -1,6 +1,0 @@
-server_url = "wss://example.com/ws"
-username = "username"
-password = "password"
-max_image_kb = 512
-material_effect = "acrylic"
-theme_mode = "light"
