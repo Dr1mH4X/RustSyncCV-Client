@@ -21,7 +21,7 @@ jobs:
             arch: "amd64"
             args: ""
           - job: "linux-amd64"
-            platform: "ubuntu-latest"
+            platform: "self-hosted"
             os_name: "linux"
             arch: "amd64"
             args: ""
