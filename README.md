@@ -2,6 +2,13 @@
 - [x] 系统托盘
 - [x] 迁移至 Tauri
 
+## How to use
+
+MacOS:
+```
+xattr -rd com.apple.quarantine /Applications/RustSyncCV.app
+```
+
 ## License
 
 [MIT](./LICENSE)
