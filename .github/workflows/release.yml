@@ -20,11 +20,6 @@ jobs:
             os_name: "windows"
             arch: "amd64"
             args: ""
-          - job: "linux-amd64"
-            platform: "self-hosted"
-            os_name: "linux"
-            arch: "amd64"
-            args: ""
           - job: "mac-arm64"
             platform: "macos-latest"
             os_name: "macos"
@@ -56,12 +51,6 @@ jobs:
         with:
           workspaces: "src-tauri -> target"
 
-      - name: Install dependencies (ubuntu only)
-        if: matrix.platform == 'self-hosted'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf imagemagick libxdo-dev
-
       - name: Install Frontend Dependencies
         run: pnpm install
 
@@ -91,10 +80,6 @@ jobs:
           if [[ "${{ matrix.os_name }}" == "windows" ]]; then
             EXE_FILE="src-tauri/target/release/rust-sync-cv-client.exe"
             7z a -t7z -mx=9 "./final_artifacts/${BASE_NAME}.7z" "./${EXE_FILE}"
-
-          elif [[ "${{ matrix.os_name }}" == "linux" ]]; then
-            APPIMAGE_PATH=$(ls src-tauri/target/release/bundle/appimage/*.AppImage)
-            GZIP=-9 tar -czf "./final_artifacts/${BASE_NAME}.tar.gz" -C "$(dirname "$APPIMAGE_PATH")" "$(basename "$APPIMAGE_PATH")"
 
           elif [[ "${{ matrix.os_name }}" == "macos" ]]; then
             brew install create-dmg
@@ -165,7 +150,7 @@ jobs:
 
   publish-release:
     needs: buildapp
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
