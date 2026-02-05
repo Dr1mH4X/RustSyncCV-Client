@@ -9,13 +9,13 @@ MacOS:
 xattr -rd com.apple.quarantine /Applications/RustSyncCV.app
 ```
 
+## Development
+
+[开发手册](./doc/dev/development.md)。
+
 ## License
 
 [MIT](./LICENSE)
-
-## 开发
-
-[开发手册](./doc/dev/development.md)。
 
 ## ❤️
 
