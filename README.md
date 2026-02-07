@@ -12,6 +12,7 @@
 [![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](github.com/Dr1mH4X/RustSyncCV-Client)
 ![GitHub License](https://img.shields.io/github/license/Dr1mH4X/RustSyncCV-Client)
 [![GitHub release](https://img.shields.io/github/v/release/Dr1mH4X/RustSyncCV-Client?color=blue&label=download&sort=semver)](https://github.com/Dr1mH4X/RustSyncCV-Client/releases/latest)
+</div>
 
 ## TODO
 
