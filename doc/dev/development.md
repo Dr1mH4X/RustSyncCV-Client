@@ -43,15 +43,6 @@ pnpm tauri dev
 pnpm tauri build
 ```
 
-## 架构概览
-
--   **前端**: `src/` (React, Tailwind CSS, TypeScript)
-    -   `components/`: UI 组件 (MainWindow, SettingsWindow)。
-    -   `i18n/`: 国际化文件。
--   **后端**: `src-tauri/src/` (Rust)
-    -   `main.rs`: 入口点，Tauri 设置，指令 (commands)。
-    -   `runtime/`: 连接和剪贴板同步的核心逻辑。
-
 ## 🔧 技术栈
 
 | 类别     | 技术                                                |
@@ -63,3 +54,12 @@ pnpm tauri build
 | 样式方案 | [Tailwind CSS](https://tailwindcss.com/) 4          |
 | 国际化   | [i18next](https://www.i18next.com/) i18next         |
 | 构建工具 | [Vite](https://vitejs.dev/) 7                       |
+
+## 架构
+
+-   **前端**: `src/` (React, Tailwind CSS, TypeScript)
+    -   `components/`: UI 组件 (MainWindow, SettingsWindow)。
+    -   `i18n/`: 国际化文件。
+-   **后端**: `src-tauri/src/` (Rust)
+    -   `main.rs`: 入口点，Tauri 设置，指令 (commands)。
+    -   `runtime/`: 连接和剪贴板同步的核心逻辑。
