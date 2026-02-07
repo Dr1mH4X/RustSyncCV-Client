@@ -54,6 +54,7 @@ pnpm tauri build
 
 ## 🔧 技术栈
 
+| -------- | --------------------------------------------------- |
 | 桌面框架 | [Tauri](https://tauri.app/) v2                      |
 | 后端语言 | [Rust](https://www.rust-lang.org/) 1.70+            |
 | 前端框架 | [React](https://react.dev/) 19                      |
