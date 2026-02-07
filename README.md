@@ -1,3 +1,7 @@
+[![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](github.com/Dr1mH4X/RustSyncCV-Client)
+![GitHub License](https://img.shields.io/github/license/Dr1mH4X/RustSyncCV-Client)
+[![GitHub release](https://img.shields.io/github/v/release/Dr1mH4X/RustSyncCV-Client?color=blue&label=download&sort=semver)](https://github.com/Dr1mH4X/RustSyncCV-Client/releases/latest)
+
 ## TODO
 
 - [ ] 局域网客户端连接
@@ -14,10 +18,6 @@ xattr -rd com.apple.quarantine /Applications/RustSyncCV.app
 ## Development
 
 [开发手册](./doc/dev/development.md)。
-
-## License
-
-[MIT](./LICENSE)
 
 ## ❤️
 
