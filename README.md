@@ -14,22 +14,12 @@
 [![GitHub release](https://img.shields.io/github/v/release/Dr1mH4X/RustSyncCV-Client?color=blue&label=download&sort=semver)](https://github.com/Dr1mH4X/RustSyncCV-Client/releases/latest)
 </div>
 
-## TODO
-
-- [ ] 局域网客户端连接
-- [x] 系统托盘
-- [x] 迁移至 Tauri
-
 ## How to use
 
 MacOS:
 ```
 xattr -rd com.apple.quarantine /Applications/RustSyncCV.app
 ```
-
-## Development
-
-[开发手册](./doc/dev/development.md)。
 
 ## ❤️
 
