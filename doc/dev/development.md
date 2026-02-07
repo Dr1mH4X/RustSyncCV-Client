@@ -54,11 +54,12 @@ pnpm tauri build
 
 ## 🔧 技术栈
 
-| -------- | --------------------------------------------------- |
+| 类别     | 技术                                                |
+| -------- | -------------------------------------------------- |
 | 桌面框架 | [Tauri](https://tauri.app/) v2                      |
 | 后端语言 | [Rust](https://www.rust-lang.org/) 1.70+            |
 | 前端框架 | [React](https://react.dev/) 19                      |
 | 类型系统 | [TypeScript](https://www.typescriptlang.org/) 5.8   |
 | 样式方案 | [Tailwind CSS](https://tailwindcss.com/) 4          |
-| 国际化   | [i18next](https://www.i18next.com/) + react-i18next |
+| 国际化   | [i18next](https://www.i18next.com/) i18next         |
 | 构建工具 | [Vite](https://vitejs.dev/) 7                       |
