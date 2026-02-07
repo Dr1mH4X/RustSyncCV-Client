@@ -9,7 +9,7 @@
 brew install node
 brew install pnpm
 
-# Windows (scoop)
+# Windows (Scoop)
 scoop install nodejs
 scoop install -g pnpm
 ```
