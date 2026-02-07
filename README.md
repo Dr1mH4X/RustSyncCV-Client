@@ -1,3 +1,9 @@
+<div align="center">
+<img alt="icon-512.png" height="80" src="src-tauri/icons/icon.png"/>
+<h1 align="center" style="margin-top: 0">RustSyncCV-Client</h1>
+<p align="center">
+<strong>Multi-device clipboard</strong>
+</p>
 [![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](github.com/Dr1mH4X/RustSyncCV-Client)
 ![GitHub License](https://img.shields.io/github/license/Dr1mH4X/RustSyncCV-Client)
 [![GitHub release](https://img.shields.io/github/v/release/Dr1mH4X/RustSyncCV-Client?color=blue&label=download&sort=semver)](https://github.com/Dr1mH4X/RustSyncCV-Client/releases/latest)
