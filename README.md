@@ -28,3 +28,11 @@ xattr -rd com.apple.quarantine /Applications/RustSyncCV.app
 <a href="https://github.com/RustSync/RustSyncCV-Client/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=RustSync/RustSyncCV-Client" />
 </a>
+
+## Dependencies
+
+* [window-vibrancy](https://github.com/tauri-apps/window-vibrancy)
+
+## License
+
+[MIT](https://github.com/Dr1mH4X/RustSyncCV-Client/blob/main/LICENSE)
