@@ -3,8 +3,8 @@
 version = 4
 
 [[package]]
-name = "RustSyncCV-Client-GUI"
-version = "0.4.5"
+name = "RustSyncCV-Client"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "arboard",
