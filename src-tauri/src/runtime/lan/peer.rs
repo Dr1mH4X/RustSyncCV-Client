@@ -24,12 +24,12 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::{broadcast, mpsc},
-    time::{interval, sleep, Duration, Instant},
+    time::{interval, sleep, timeout, Duration, Instant},
 };
 use tokio_util::sync::CancellationToken;
 
 use super::protocol::{
-    encode_peer_message, PeerMessage, DEFAULT_TCP_PORT, HEARTBEAT_INTERVAL_SECS,
+    encode_peer_message, PeerMessage, HANDSHAKE_TIMEOUT_SECS, HEARTBEAT_INTERVAL_SECS,
     HEARTBEAT_TIMEOUT_SECS, INITIAL_RECONNECT_DELAY_SECS, MAX_FRAME_SIZE, MAX_RECONNECT_DELAY_SECS,
 };
 use crate::runtime::messages::{
@@ -41,56 +41,43 @@ use crate::runtime::{RuntimeEvent, RuntimeLogEvent};
 // Public API — Host
 // ────────────────────────────────────────────────────────────────────────────
 
-/// Bind a TCP listener and accept peer connections.
+/// Accept peer connections on a **pre-bound** [`TcpListener`].
 ///
-/// Each accepted connection is handled in its own spawned task via
-/// [`run_peer_session`]. The host sends a `Welcome` after receiving the
-/// client's `Hello`.
+/// The caller is responsible for binding the listener (so that bind failures
+/// can be surfaced before any background tasks are spawned). Each accepted
+/// connection is handled in its own spawned task via [`run_peer_session`].
+/// The host sends a `Welcome` after receiving the client's `Hello`.
 ///
 /// # Arguments
 ///
 /// * `device_id`   — our unique peer identifier.
 /// * `device_name` — human-friendly device name (displayed on the remote).
-/// * `tcp_port`    — port to listen on (`0` → [`DEFAULT_TCP_PORT`]).
+/// * `listener`    — a pre-bound TCP listener.
 /// * `tx_out`      — broadcast channel carrying outbound clipboard updates
 ///                    (from our local clipboard monitor).
 /// * `tx_in`       — channel to forward inbound clipboard payloads into the
 ///                    local clipboard setter.
 /// * `events`      — runtime event sink for logging / UI.
 /// * `cancel`      — token to signal graceful shutdown.
-pub async fn run_tcp_host(
+pub async fn run_tcp_host_on_listener(
     device_id: String,
     device_name: String,
-    tcp_port: u16,
+    listener: TcpListener,
     tx_out: broadcast::Sender<ClipboardUpdate>,
     tx_in: mpsc::Sender<ClipboardBroadcastPayload>,
     events: mpsc::Sender<RuntimeEvent>,
     cancel: CancellationToken,
 ) {
-    let port = if tcp_port == 0 {
-        DEFAULT_TCP_PORT
-    } else {
-        tcp_port
-    };
-
-    let bind_addr = format!("0.0.0.0:{}", port);
-    let listener = match TcpListener::bind(&bind_addr).await {
-        Ok(l) => l,
-        Err(e) => {
-            emit_log(
-                &events,
-                Level::Error,
-                format!("LAN host TCP bind failed on {}: {}", bind_addr, e),
-            )
-            .await;
-            return;
-        }
-    };
-
     emit_log(
         &events,
         Level::Info,
-        format!("LAN host listening on {}", bind_addr),
+        format!(
+            "LAN host listening on {}",
+            listener
+                .local_addr()
+                .map(|a| a.to_string())
+                .unwrap_or_else(|_| "unknown".into())
+        ),
     )
     .await;
 
@@ -264,10 +251,20 @@ async fn host_session(
     events: mpsc::Sender<RuntimeEvent>,
     cancel: CancellationToken,
 ) -> Result<()> {
-    // ── Wait for Hello ───────────────────────────────────────────────────
-    let hello = read_peer_message(&mut stream)
-        .await
-        .context("reading Hello from client")?;
+    // ── Wait for Hello (cancel-aware + timeout-guarded) ──────────────────
+    let hello = tokio::select! {
+        _ = cancel.cancelled() => {
+            return Err(anyhow!("cancelled while waiting for Hello"));
+        }
+        result = timeout(
+            Duration::from_secs(HANDSHAKE_TIMEOUT_SECS),
+            read_peer_message(&mut stream),
+        ) => {
+            result
+                .map_err(|_| anyhow!("timed out waiting for Hello from client"))?
+                .context("reading Hello from client")?
+        }
+    };
 
     let (remote_id, remote_name) = match hello {
         PeerMessage::Hello {
@@ -321,10 +318,20 @@ async fn client_session(
     };
     write_peer_message(&mut stream, &hello).await?;
 
-    // ── Wait for Welcome ─────────────────────────────────────────────────
-    let welcome = read_peer_message(&mut stream)
-        .await
-        .context("reading Welcome from host")?;
+    // ── Wait for Welcome (cancel-aware + timeout-guarded) ────────────────
+    let welcome = tokio::select! {
+        _ = cancel.cancelled() => {
+            return Err(anyhow!("cancelled while waiting for Welcome"));
+        }
+        result = timeout(
+            Duration::from_secs(HANDSHAKE_TIMEOUT_SECS),
+            read_peer_message(&mut stream),
+        ) => {
+            result
+                .map_err(|_| anyhow!("timed out waiting for Welcome from host"))?
+                .context("reading Welcome from host")?
+        }
+    };
 
     let (remote_id, remote_name) = match welcome {
         PeerMessage::Welcome {
