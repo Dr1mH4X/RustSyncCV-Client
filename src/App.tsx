@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useTranslation } from "react-i18next";
-import { MainWindow } from "./components/MainWindow";
+import { MainWindow, type LanPeer } from "./components/MainWindow";
 import SettingsWindow, { type SettingsForm } from "./components/SettingsWindow";
 
 // --- Types ---
@@ -27,6 +27,8 @@ export default function App() {
   const [isSettingsWindow, setIsSettingsWindow] = useState(false);
   const [paused, setPaused] = useState(true);
   const [statusText, setStatusText] = useState("");
+  const [connectionMode, setConnectionMode] = useState("server");
+  const [lanPeers, setLanPeers] = useState<LanPeer[]>([]);
 
   useEffect(() => {
     const win = getCurrentWindow();
@@ -38,10 +40,11 @@ export default function App() {
   useEffect(() => {
     if (isSettingsWindow) return;
 
-    // Load initial state (effects, paused status)
+    // Load initial state (effects, paused status, connection mode)
     invoke<InitialState>("get_initial_state")
       .then((state) => {
         setPaused(state.paused);
+        setConnectionMode(state.config.connection_mode || "server");
         applyLanguage(state.config.language);
         invoke("apply_window_effects", {
           effect: state.config.material_effect,
@@ -62,17 +65,32 @@ export default function App() {
     );
 
     const unlistenConfig = listen<SettingsForm>("config-changed", (event) => {
+      setConnectionMode(event.payload.connection_mode || "server");
       applyLanguage(event.payload.language);
       invoke("apply_window_effects", {
         effect: event.payload.material_effect,
         theme: event.payload.theme_mode,
       });
+      // Clear LAN peers when switching modes so stale data doesn't linger.
+      if (event.payload.connection_mode !== "lan") {
+        setLanPeers([]);
+      }
+    });
+
+    const unlistenLanPeers = listen<string>("lan-peers-changed", (event) => {
+      try {
+        const peers: LanPeer[] = JSON.parse(event.payload);
+        setLanPeers(peers);
+      } catch {
+        setLanPeers([]);
+      }
     });
 
     return () => {
       unlistenStatus.then((f) => f());
       unlistenConnection.then((f) => f());
       unlistenConfig.then((f) => f());
+      unlistenLanPeers.then((f) => f());
     };
   }, [isSettingsWindow]);
 
@@ -140,6 +158,8 @@ export default function App() {
       <MainWindow
         paused={paused}
         statusText={statusText}
+        connectionMode={connectionMode}
+        lanPeers={lanPeers}
         onTogglePause={handleTogglePause}
         onOpenSettings={handleOpenSettings}
         onOpenLogFolder={handleOpenLogFolder}

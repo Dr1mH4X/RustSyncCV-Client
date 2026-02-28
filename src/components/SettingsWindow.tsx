@@ -15,6 +15,9 @@ export interface SettingsForm {
   material_effect: string;
   theme_mode: string;
   language: string;
+  connection_mode: string;
+  lan_device_name: string;
+  close_behavior: string;
 }
 
 interface InitialState {
@@ -28,10 +31,14 @@ export default function SettingsWindow() {
   const [autoStart, setAutoStart] = useState(false);
 
   useEffect(() => {
-    // Load initial settings from Rust backend
     invoke<InitialState>("get_initial_state")
       .then((state) => {
-        setFormData(state.config);
+        setFormData({
+          ...state.config,
+          connection_mode: state.config.connection_mode || "server",
+          lan_device_name: state.config.lan_device_name || "",
+          close_behavior: state.config.close_behavior || "minimize_to_tray",
+        });
         applyLanguage(state.config.language);
       })
       .catch((err) => console.error("Failed to load settings:", err));
@@ -42,7 +49,6 @@ export default function SettingsWindow() {
   const applyLanguage = (mode: string) => {
     if (mode === "system") {
       const sysLang = navigator.language.split("-")[0];
-      // Simple fallback mapping if needed, assuming resources has 'en' and 'zh'
       i18n.changeLanguage(sysLang === "zh" ? "zh" : "en");
     } else {
       i18n.changeLanguage(mode);
@@ -75,7 +81,6 @@ export default function SettingsWindow() {
   const handleSave = async (data: SettingsForm) => {
     try {
       await invoke("save_settings", { form: data });
-      // We also apply effects here to ensure immediate feedback if changed
       await invoke("apply_window_effects", {
         effect: data.material_effect,
         theme: data.theme_mode,
@@ -100,6 +105,36 @@ export default function SettingsWindow() {
     });
   };
 
+  const handleModeChange = (mode: string) => {
+    if (formData) {
+      const newData = { ...formData, connection_mode: mode };
+      setFormData(newData);
+      handleSave(newData);
+    }
+  };
+
+  const handleCloseBehaviorChange = (behavior: string) => {
+    if (formData) {
+      const newData = { ...formData, close_behavior: behavior };
+      setFormData(newData);
+      handleSave(newData);
+    }
+  };
+
+  const handleAutoDetectHostname = async () => {
+    try {
+      const hostname = await invoke<string>("get_hostname");
+      if (formData) {
+        const newData = { ...formData, lan_device_name: hostname };
+        setFormData(newData);
+        handleSave(newData);
+      }
+    } catch (e: any) {
+      console.error(e);
+      setError(String(e));
+    }
+  };
+
   if (!formData) {
     return (
       <div className="flex items-center justify-center h-screen bg-slate-900/60 text-slate-200 text-sm">
@@ -107,6 +142,8 @@ export default function SettingsWindow() {
       </div>
     );
   }
+
+  const isLan = formData.connection_mode === "lan";
 
   return (
     <div className="flex flex-col h-screen bg-slate-900/60 p-6 overflow-y-auto select-none text-slate-200">
@@ -135,6 +172,7 @@ export default function SettingsWindow() {
         </div>
       </div>
 
+      {/* Auto-start toggle */}
       <div className="flex items-center justify-between mb-6">
         <BaseLabel>{t("settings.auto_start")}</BaseLabel>
         <button
@@ -153,49 +191,149 @@ export default function SettingsWindow() {
         </button>
       </div>
 
+      {/* Close Behavior Selector */}
+      <div className="space-y-2 mb-6">
+        <BaseLabel>{t("settings.close_behavior")}</BaseLabel>
+        <div className="grid grid-cols-3 gap-2">
+          {(
+            [
+              {
+                key: "minimize_to_tray",
+                label: t("settings.close_behavior_minimize_to_tray"),
+              },
+              { key: "minimize", label: t("settings.close_behavior_minimize") },
+              { key: "quit", label: t("settings.close_behavior_quit") },
+            ] as const
+          ).map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => handleCloseBehaviorChange(key)}
+              className={cn(
+                "px-2 py-2 rounded-lg text-xs transition-all border leading-tight",
+                formData.close_behavior === key
+                  ? "bg-blue-500/20 text-blue-100 border-blue-500/30 font-medium"
+                  : "bg-slate-800/40 text-slate-400 border-transparent hover:bg-slate-800/60 hover:text-slate-200",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Connection Mode Selector */}
+      <div className="space-y-2 mb-6">
+        <BaseLabel>{t("settings.connection_mode")}</BaseLabel>
+        <div className="grid grid-cols-2 gap-2">
+          {(["server", "lan"] as const).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => handleModeChange(mode)}
+              className={cn(
+                "px-3 py-2.5 rounded-lg text-sm transition-all border",
+                formData.connection_mode === mode
+                  ? "bg-blue-500/20 text-blue-100 border-blue-500/30 font-medium"
+                  : "bg-slate-800/40 text-slate-400 border-transparent hover:bg-slate-800/60 hover:text-slate-200",
+              )}
+            >
+              {mode === "server"
+                ? t("settings.mode_server")
+                : t("settings.mode_lan")}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="space-y-5">
-        {/* Server URL */}
-        <div>
-          <BaseLabel>{t("settings.server_url")}</BaseLabel>
-          <BaseInput
-            value={formData.server_url}
-            onChange={(e) => handleChange("server_url", e.target.value)}
-            onBlur={handleBlur}
-            placeholder="wss://..."
-          />
-        </div>
+        {/* ── Server Mode Settings ─────────────────────────────────────── */}
+        {!isLan && (
+          <>
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+              {t("settings.server_section_title")}
+            </div>
 
-        {/* Token */}
-        <div>
-          <BaseLabel>{t("settings.token")}</BaseLabel>
-          <BaseInput
-            type="password"
-            value={formData.token}
-            onChange={(e) => handleChange("token", e.target.value)}
-            onBlur={handleBlur}
-          />
-        </div>
+            {/* Server URL */}
+            <div>
+              <BaseLabel>{t("settings.server_url")}</BaseLabel>
+              <BaseInput
+                value={formData.server_url}
+                onChange={(e) => handleChange("server_url", e.target.value)}
+                onBlur={handleBlur}
+                placeholder="wss://..."
+              />
+            </div>
 
-        {/* Username */}
-        <div>
-          <BaseLabel>{t("settings.username")}</BaseLabel>
-          <BaseInput
-            value={formData.username}
-            onChange={(e) => handleChange("username", e.target.value)}
-            onBlur={handleBlur}
-          />
-        </div>
+            {/* Token */}
+            <div>
+              <BaseLabel>{t("settings.token")}</BaseLabel>
+              <BaseInput
+                type="password"
+                value={formData.token}
+                onChange={(e) => handleChange("token", e.target.value)}
+                onBlur={handleBlur}
+              />
+            </div>
 
-        {/* Password */}
-        <div>
-          <BaseLabel>{t("settings.password")}</BaseLabel>
-          <BaseInput
-            type="password"
-            value={formData.password}
-            onChange={(e) => handleChange("password", e.target.value)}
-            onBlur={handleBlur}
-          />
-        </div>
+            {/* Username */}
+            <div>
+              <BaseLabel>{t("settings.username")}</BaseLabel>
+              <BaseInput
+                value={formData.username}
+                onChange={(e) => handleChange("username", e.target.value)}
+                onBlur={handleBlur}
+              />
+            </div>
+
+            {/* Password */}
+            <div>
+              <BaseLabel>{t("settings.password")}</BaseLabel>
+              <BaseInput
+                type="password"
+                value={formData.password}
+                onChange={(e) => handleChange("password", e.target.value)}
+                onBlur={handleBlur}
+              />
+            </div>
+          </>
+        )}
+
+        {/* ── LAN Mode Settings ───────────────────────────────────────── */}
+        {isLan && (
+          <>
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+              {t("settings.lan_section_title")}
+            </div>
+
+            {/* Device Name with Auto Detect button */}
+            <div>
+              <BaseLabel>{t("settings.lan_device_name")}</BaseLabel>
+              <div className="flex gap-2">
+                <BaseInput
+                  value={formData.lan_device_name}
+                  onChange={(e) =>
+                    handleChange("lan_device_name", e.target.value)
+                  }
+                  onBlur={handleBlur}
+                  placeholder={t("settings.lan_device_name_placeholder")}
+                  className="flex-1"
+                />
+                <button
+                  onClick={handleAutoDetectHostname}
+                  className={cn(
+                    "shrink-0 px-3 py-2 rounded-lg text-xs font-medium transition-all border",
+                    "bg-slate-800/80 border-slate-700/60 text-slate-300",
+                    "hover:bg-slate-700/90 hover:border-slate-600 hover:text-slate-100",
+                    "active:scale-[0.97]",
+                  )}
+                >
+                  {t("settings.lan_auto_detect")}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ── Shared Settings ─────────────────────────────────────────── */}
 
         {/* Max Image Size */}
         <div>
