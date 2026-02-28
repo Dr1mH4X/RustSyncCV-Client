@@ -304,6 +304,12 @@ export default function SettingsWindow() {
               {t("settings.lan_section_title")}
             </div>
 
+            {/* Security Warning */}
+            <div className="flex gap-2.5 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-200/90 text-xs leading-relaxed">
+              <span className="shrink-0 text-sm">⚠</span>
+              <span>{t("lan.security_warning")}</span>
+            </div>
+
             {/* Device Name with Auto Detect button */}
             <div>
               <BaseLabel>{t("settings.lan_device_name")}</BaseLabel>
