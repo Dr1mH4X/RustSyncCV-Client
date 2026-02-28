@@ -226,20 +226,30 @@ export default function SettingsWindow() {
         <BaseLabel>{t("settings.connection_mode")}</BaseLabel>
         <div className="grid grid-cols-2 gap-2">
           {(["server", "lan"] as const).map((mode) => (
-            <button
-              key={mode}
-              onClick={() => handleModeChange(mode)}
-              className={cn(
-                "px-3 py-2.5 rounded-lg text-sm transition-all border",
-                formData.connection_mode === mode
-                  ? "bg-blue-500/20 text-blue-100 border-blue-500/30 font-medium"
-                  : "bg-slate-800/40 text-slate-400 border-transparent hover:bg-slate-800/60 hover:text-slate-200",
+            <div key={mode} className="relative group">
+              <button
+                onClick={() => handleModeChange(mode)}
+                className={cn(
+                  "w-full px-3 py-2.5 rounded-lg text-sm transition-all border",
+                  formData.connection_mode === mode
+                    ? "bg-blue-500/20 text-blue-100 border-blue-500/30 font-medium"
+                    : "bg-slate-800/40 text-slate-400 border-transparent hover:bg-slate-800/60 hover:text-slate-200",
+                )}
+              >
+                {mode === "server"
+                  ? t("settings.mode_server")
+                  : t("settings.mode_lan")}
+              </button>
+              {mode === "lan" && (
+                <div className="absolute right-0 bottom-full mb-2 w-64 p-2.5 rounded-lg bg-slate-800/95 backdrop-blur-md text-amber-200/90 text-xs border border-amber-500/20 shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none flex items-start gap-2 leading-relaxed">
+                  <div className="absolute -bottom-1.5 right-20 w-3 h-3 bg-slate-800 border-b border-r border-amber-500/20 rotate-45" />
+                  <span className="shrink-0 text-sm">⚠</span>
+                  <span className="relative z-10">
+                    {t("lan.security_warning")}
+                  </span>
+                </div>
               )}
-            >
-              {mode === "server"
-                ? t("settings.mode_server")
-                : t("settings.mode_lan")}
-            </button>
+            </div>
           ))}
         </div>
       </div>
@@ -302,12 +312,6 @@ export default function SettingsWindow() {
           <>
             <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
               {t("settings.lan_section_title")}
-            </div>
-
-            {/* Security Warning */}
-            <div className="flex gap-2.5 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-200/90 text-xs leading-relaxed">
-              <span className="shrink-0 text-sm">⚠</span>
-              <span>{t("lan.security_warning")}</span>
             </div>
 
             {/* Device Name with Auto Detect button */}
