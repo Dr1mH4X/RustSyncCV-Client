@@ -49,6 +49,8 @@ export default {
     peer_at: "位于",
     status_active: "局域网模式已启动",
     status_searching: "正在局域网中搜索设备…",
+    security_warning:
+      "局域网模式没有身份验证或加密。同一网络上的任何设备都可以发现此节点并交换剪贴板数据。请仅在受信任的网络中使用。",
   },
   logs: {
     title: "日志",

@@ -37,6 +37,13 @@
 //! `A.device_id > B.device_id` (lexicographic comparison). This ensures
 //! exactly one TCP session is established between any two peers without
 //! any additional negotiation protocol.
+//!
+//! ## Security Notice
+//!
+//! **LAN mode currently has no authentication or encryption.** Any device
+//! on the same network segment can discover and exchange clipboard data
+//! with this peer. A shared-secret / pairing mechanism is planned for a
+//! future release. Until then, only use LAN mode on trusted networks.
 
 pub mod discovery;
 pub mod peer;
@@ -47,8 +54,11 @@ use std::{
     sync::{atomic::AtomicBool, Arc},
 };
 
+use anyhow::{Context, Result};
 use log::Level;
+use parking_lot::Mutex as ParkingMutex;
 use tokio::{
+    net::TcpListener,
     sync::{broadcast, mpsc},
     task::JoinHandle,
     time::{sleep, Duration},
@@ -56,8 +66,11 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use discovery::{get_discovered_peers, new_peer_map, run_beacon_broadcaster, run_beacon_listener};
-use peer::{run_tcp_client, run_tcp_host};
+use discovery::{
+    bind_reusable_udp, get_discovered_peers, new_peer_map, run_beacon_broadcaster,
+    run_beacon_listener, DiscoveredPeers,
+};
+use peer::{run_tcp_client, run_tcp_host_on_listener};
 use protocol::{DiscoveredPeer, DEFAULT_DISCOVERY_PORT, DEFAULT_TCP_PORT};
 
 use super::clipboard::{start_clipboard_monitor, start_clipboard_setter};
@@ -73,32 +86,31 @@ use super::{RuntimeEvent, RuntimeLogEvent};
 /// peers that we should connect to (seconds).
 const CONNECTOR_SCAN_INTERVAL_SECS: u64 = 4;
 
+/// Security warning emitted when LAN mode starts. This is surfaced in the
+/// log stream so it appears in both the UI log panel and the log file.
+const LAN_SECURITY_WARNING: &str = "⚠ LAN mode has no authentication or encryption. \
+     Only use on trusted networks. Any device on this network segment \
+     can discover this peer and exchange clipboard data.";
+
 // ────────────────────────────────────────────────────────────────────────────
 // Public entry point
 // ────────────────────────────────────────────────────────────────────────────
 
-/// Orchestrates all LAN-mode tasks and returns a set of [`JoinHandle`]s
-/// that the caller can await or abort for clean shutdown.
+/// Handle bundle for all tasks spawned by LAN mode.
 ///
-/// This is the single public entry point that [`RuntimeWorker`] calls when
-/// the user has chosen LAN mode. It:
-///
-/// 1. Generates a session `device_id` and resolves the local hostname as
-///    `device_name`.
-/// 2. Spawns the clipboard monitor and setter (reusing the existing
-///    implementations).
-/// 3. Spawns the UDP beacon broadcaster and listener.
-/// 4. Spawns the TCP host listener.
-/// 5. Spawns a **peer connector** task that periodically checks the
-///    discovered-peers map and opens TCP client connections to any new
-///    peer where our `device_id` is lexicographically greater (the
-///    "server-decided" rule).
-///
-/// All tasks share a single [`CancellationToken`]; cancelling it will
-/// gracefully stop everything.
+/// Owns a [`CancellationToken`] and the [`JoinHandle`]s of all core tasks.
+/// Additionally holds a shared vec of dynamically-spawned peer-client
+/// handles so that [`shutdown`] / [`abort`] can deterministically stop
+/// *every* task, including those created by the peer connector at runtime.
 pub struct LanTasks {
     pub cancel: CancellationToken,
+    /// Core tasks (clipboard monitor, setter, beacon broadcaster, beacon
+    /// listener, TCP host, peer connector).
     pub handles: Vec<JoinHandle<()>>,
+    /// Dynamically-spawned TCP client tasks created by the peer connector.
+    /// Shared with the connector task via `Arc` so it can push new handles
+    /// as peers are discovered.
+    pub dynamic_handles: Arc<ParkingMutex<Vec<JoinHandle<()>>>>,
 }
 
 impl LanTasks {
@@ -108,12 +120,27 @@ impl LanTasks {
         for h in self.handles {
             let _ = h.await;
         }
+        // Also await all dynamically-spawned client tasks.
+        let dynamic: Vec<JoinHandle<()>> = {
+            let mut lock = self.dynamic_handles.lock();
+            std::mem::take(&mut *lock)
+        };
+        for h in dynamic {
+            let _ = h.await;
+        }
     }
 
     /// Cancel all tasks and abort them without waiting.
     pub fn abort(self) {
         self.cancel.cancel();
         for h in self.handles {
+            h.abort();
+        }
+        let dynamic: Vec<JoinHandle<()>> = {
+            let mut lock = self.dynamic_handles.lock();
+            std::mem::take(&mut *lock)
+        };
+        for h in dynamic {
             h.abort();
         }
     }
@@ -125,6 +152,10 @@ impl LanTasks {
 /// [`DEFAULT_TCP_PORT`]) so that all peers on the same LAN segment agree
 /// without any user configuration.
 ///
+/// This function is **async** and performs the critical socket binds (UDP
+/// listener, TCP host) *before* spawning background tasks. If either bind
+/// fails the function returns an error and no tasks are left running.
+///
 /// # Arguments
 ///
 /// * `config`              — application configuration (only `max_image_kb`
@@ -135,12 +166,18 @@ impl LanTasks {
 ///                            `RuntimeWorker`.
 /// * `cancel`              — parent cancellation token; we derive child
 ///                            tokens so the caller can stop everything.
-pub fn start_lan_mode(
+///
+/// # Errors
+///
+/// Returns an error if the UDP discovery socket or the TCP host listener
+/// cannot be bound. The caller should treat this as a startup failure and
+/// *not* transition to `Connected` state.
+pub async fn start_lan_mode(
     config: &Config,
     device_name_override: Option<String>,
     events: mpsc::Sender<RuntimeEvent>,
     cancel: CancellationToken,
-) -> LanTasks {
+) -> Result<LanTasks> {
     let device_id = Uuid::new_v4().to_string();
     let device_name = device_name_override
         .filter(|s| !s.is_empty())
@@ -154,13 +191,53 @@ pub fn start_lan_mode(
     let discovery_port = DEFAULT_DISCOVERY_PORT;
     let tcp_port = DEFAULT_TCP_PORT;
 
-    // Shared channels — same pattern as the existing WebSocket runtime.
+    // ── Security warning ─────────────────────────────────────────────────
+    let _ = events
+        .send(RuntimeEvent::Log(RuntimeLogEvent::new(
+            Level::Warn,
+            LAN_SECURITY_WARNING,
+        )))
+        .await;
+
+    // ── Pre-bind critical sockets ────────────────────────────────────────
+    // We bind *before* spawning any tasks so that the caller can report a
+    // clean startup error instead of silently failing in the background.
+
+    let udp_listener_socket = bind_reusable_udp(discovery_port, &events)
+        .await
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "failed to bind UDP discovery listener on port {}",
+                discovery_port
+            )
+        })?;
+
+    let tcp_bind_addr = format!("0.0.0.0:{}", tcp_port);
+    let tcp_listener = TcpListener::bind(&tcp_bind_addr)
+        .await
+        .context(format!("failed to bind TCP host on {}", tcp_bind_addr))?;
+
+    let _ = events
+        .send(RuntimeEvent::Log(RuntimeLogEvent::new(
+            Level::Info,
+            format!(
+                "LAN sockets bound — UDP discovery port={}, TCP host port={}",
+                discovery_port, tcp_port
+            ),
+        )))
+        .await;
+
+    // ── Shared channels — same pattern as the existing WebSocket runtime ─
     let disable_flag = Arc::new(AtomicBool::new(false));
     let (tx_out, _) = broadcast::channel::<ClipboardUpdate>(100);
     let (tx_in, rx_in) = mpsc::channel::<ClipboardBroadcastPayload>(100);
 
     // Discovered peers map — shared between listener and connector.
     let peers = new_peer_map();
+
+    // Dynamic client handles — shared between connector and LanTasks.
+    let dynamic_handles: Arc<ParkingMutex<Vec<JoinHandle<()>>>> =
+        Arc::new(ParkingMutex::new(Vec::new()));
 
     let mut handles: Vec<JoinHandle<()>> = Vec::new();
 
@@ -198,18 +275,18 @@ pub fn start_lan_mode(
         }));
     }
 
-    // ── 4. UDP beacon listener ───────────────────────────────────────────
+    // ── 4. UDP beacon listener (using pre-bound socket) ──────────────────
     {
         let did = device_id.clone();
         let pm = peers.clone();
         let ev = events.clone();
         let ct = cancel.clone();
         handles.push(tokio::spawn(async move {
-            run_beacon_listener(did, discovery_port, pm, ev, ct).await;
+            run_beacon_listener(did, pm, udp_listener_socket, ev, ct).await;
         }));
     }
 
-    // ── 5. TCP host listener ─────────────────────────────────────────────
+    // ── 5. TCP host listener (using pre-bound listener) ──────────────────
     {
         let did = device_id.clone();
         let dname = device_name.clone();
@@ -218,7 +295,7 @@ pub fn start_lan_mode(
         let ev = events.clone();
         let ct = cancel.clone();
         handles.push(tokio::spawn(async move {
-            run_tcp_host(did, dname, tcp_port, tx, ti, ev, ct).await;
+            run_tcp_host_on_listener(did, dname, tcp_listener, tx, ti, ev, ct).await;
         }));
     }
 
@@ -231,33 +308,34 @@ pub fn start_lan_mode(
         let ti = tx_in.clone();
         let ev = events.clone();
         let ct = cancel.clone();
+        let dh = dynamic_handles.clone();
         handles.push(tokio::spawn(async move {
-            run_peer_connector(own_id, own_name, pm, tx, ti, ev, ct).await;
+            run_peer_connector(own_id, own_name, pm, tx, ti, ev, ct, dh).await;
         }));
     }
 
-    // Emit a startup message.
-    {
-        let ev = events.clone();
-        let did = device_id.clone();
-        let dname = device_name.clone();
-        tokio::spawn(async move {
-            let _ = ev
-                .send(RuntimeEvent::Log(RuntimeLogEvent::new(
-                    Level::Info,
-                    format!(
-                        "LAN mode started — id={}, name={}, discovery_port={}, tcp_port={}",
-                        did, dname, discovery_port, tcp_port,
-                    ),
-                )))
-                .await;
-            let _ = ev
-                .send(RuntimeEvent::Status(format!("LAN mode active ({})", dname)))
-                .await;
-        });
-    }
+    // ── Startup message ──────────────────────────────────────────────────
+    let _ = events
+        .send(RuntimeEvent::Log(RuntimeLogEvent::new(
+            Level::Info,
+            format!(
+                "LAN mode started — id={}, name={}, discovery_port={}, tcp_port={}",
+                device_id, device_name, discovery_port, tcp_port,
+            ),
+        )))
+        .await;
+    let _ = events
+        .send(RuntimeEvent::Status(format!(
+            "LAN mode active ({})",
+            device_name
+        )))
+        .await;
 
-    LanTasks { cancel, handles }
+    Ok(LanTasks {
+        cancel,
+        handles,
+        dynamic_handles,
+    })
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -271,17 +349,20 @@ pub fn start_lan_mode(
 /// acceptor (host).
 ///
 /// Once a connection is initiated to a peer, the peer's `device_id` is added
-/// to a local `connected` set so we don't spawn duplicate client tasks. If
-/// the client task ends (disconnect / error) it will internally loop and
-/// retry with exponential back-off; we don't need to re-spawn it here.
+/// to a local `connected` set so we don't spawn duplicate client tasks.
+///
+/// Every spawned client [`JoinHandle`] is recorded in `dynamic_handles` so
+/// that [`LanTasks::shutdown`] / [`LanTasks::abort`] can deterministically
+/// stop them.
 async fn run_peer_connector(
     own_device_id: String,
     own_device_name: String,
-    peers: discovery::DiscoveredPeers,
+    peers: DiscoveredPeers,
     tx_out: broadcast::Sender<ClipboardUpdate>,
     tx_in: mpsc::Sender<ClipboardBroadcastPayload>,
     events: mpsc::Sender<RuntimeEvent>,
     cancel: CancellationToken,
+    dynamic_handles: Arc<ParkingMutex<Vec<JoinHandle<()>>>>,
 ) {
     let mut connected: HashSet<String> = HashSet::new();
 
@@ -330,10 +411,7 @@ async fn run_peer_connector(
             let ct = cancel.child_token();
             let peer_id = peer.device_id.clone();
 
-            // Spawn a long-lived client task that will internally handle
-            // reconnection.  We don't track the JoinHandle here; the
-            // CancellationToken will stop it on shutdown.
-            tokio::spawn(async move {
+            let handle = tokio::spawn(async move {
                 run_tcp_client(addr, did, dname, tx, ti, ev.clone(), ct).await;
                 let _ = ev
                     .send(RuntimeEvent::Log(RuntimeLogEvent::new(
@@ -342,6 +420,9 @@ async fn run_peer_connector(
                     )))
                     .await;
             });
+
+            // Track the handle so shutdown can await/abort it.
+            dynamic_handles.lock().push(handle);
         }
     }
 

@@ -49,6 +49,8 @@ export default {
     peer_at: "at",
     status_active: "LAN Mode Active",
     status_searching: "Searching for peers on the local network…",
+    security_warning:
+      "LAN mode has no authentication or encryption. Any device on the same network can discover this peer and exchange clipboard data. Only use on trusted networks.",
   },
   logs: {
     title: "Logs",

@@ -236,10 +236,23 @@ impl RuntimeWorker {
                 Some(cfg.lan_device_name.clone()),
                 self.events.clone(),
                 cancel.clone(),
-            );
+            )
+            .await;
 
-            self.emit_connection(ConnectionStateEvent::Connected).await;
-            self.active = Some(ActiveTasks::Lan(lan_tasks));
+            match lan_tasks {
+                Ok(tasks) => {
+                    self.emit_connection(ConnectionStateEvent::Connected).await;
+                    self.active = Some(ActiveTasks::Lan(tasks));
+                }
+                Err(err) => {
+                    self.emit_error(format!("LAN mode startup failed: {}", err))
+                        .await;
+                    self.emit_connection(ConnectionStateEvent::Disconnected)
+                        .await;
+                    self.paused = true;
+                    return Err(err);
+                }
+            }
         } else {
             // ── WebSocket server mode (original behaviour) ───────────
             let server_url = Url::parse(&cfg.server_url)
