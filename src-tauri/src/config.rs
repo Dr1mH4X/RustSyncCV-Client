@@ -40,39 +40,97 @@ pub async fn get_initial_state(
 }
 
 #[tauri::command]
+pub fn get_hostname() -> Result<String, String> {
+    hostname::get()
+        .map_err(|e| format!("Failed to get hostname: {}", e))
+        .and_then(|os_str| {
+            os_str
+                .into_string()
+                .map_err(|_| "Hostname contains invalid UTF-8".to_string())
+        })
+}
+
+#[tauri::command]
 pub async fn save_settings(
     app: AppHandle,
     form: SettingsForm,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let server_url = form.server_url.trim();
-    if server_url.is_empty() {
-        return Err("Server URL cannot be empty".to_string());
-    }
+    let connection_mode = form.connection_mode.trim();
+    let is_lan = connection_mode == "lan";
 
-    let token_str = form.token.trim();
-    let username_str = form.username.trim();
-    let password_str = form.password.trim();
+    // ── Mode-specific validation ─────────────────────────────────────────
 
-    let (token_opt, username_opt, password_opt) = if !token_str.is_empty() {
-        (Some(token_str.to_string()), None, None)
-    } else {
-        if username_str.is_empty() || password_str.is_empty() {
-            return Err("Please provide either Token or Username/Password".to_string());
-        }
+    let (server_url, token_opt, username_opt, password_opt) = if is_lan {
+        // In LAN mode the server fields are not required; we preserve
+        // whatever the user had so switching back to server mode keeps
+        // previous values.
+        let token = if form.token.trim().is_empty() {
+            None
+        } else {
+            Some(form.token.trim().to_string())
+        };
+        let username = if form.username.trim().is_empty() {
+            None
+        } else {
+            Some(form.username.trim().to_string())
+        };
+        let password = if form.password.trim().is_empty() {
+            None
+        } else {
+            Some(form.password.trim().to_string())
+        };
         (
-            None,
-            Some(username_str.to_string()),
-            Some(password_str.to_string()),
+            form.server_url.trim().to_string(),
+            token,
+            username,
+            password,
+        )
+    } else {
+        // Server (WebSocket) mode — original validation.
+        let server_url = form.server_url.trim();
+        if server_url.is_empty() {
+            return Err("Server URL cannot be empty".to_string());
+        }
+
+        let token_str = form.token.trim();
+        let username_str = form.username.trim();
+        let password_str = form.password.trim();
+
+        let (token_opt, username_opt, password_opt) = if !token_str.is_empty() {
+            (Some(token_str.to_string()), None, None)
+        } else {
+            if username_str.is_empty() || password_str.is_empty() {
+                return Err("Please provide either Token or Username/Password".to_string());
+            }
+            (
+                None,
+                Some(username_str.to_string()),
+                Some(password_str.to_string()),
+            )
+        };
+
+        (
+            server_url.to_string(),
+            token_opt,
+            username_opt,
+            password_opt,
         )
     };
+
+    // ── Shared field validation ──────────────────────────────────────────
 
     let max_image_kb =
         form.max_image_kb
             .clamp(Config::MIN_IMAGE_KB as i32, Config::MAX_IMAGE_KB as i32) as u64;
 
+    let close_behavior = match form.close_behavior.as_str() {
+        "minimize" | "quit" | "minimize_to_tray" => form.close_behavior.clone(),
+        _ => "minimize_to_tray".to_string(),
+    };
+
     let updated_config = Config {
-        server_url: server_url.to_string(),
+        server_url,
         token: token_opt,
         username: username_opt,
         password: password_opt,
@@ -80,6 +138,13 @@ pub async fn save_settings(
         material_effect: form.material_effect,
         theme_mode: form.theme_mode,
         language: form.language,
+        connection_mode: if is_lan {
+            "lan".to_string()
+        } else {
+            "server".to_string()
+        },
+        lan_device_name: form.lan_device_name.trim().to_string(),
+        close_behavior,
     };
 
     let store = app
