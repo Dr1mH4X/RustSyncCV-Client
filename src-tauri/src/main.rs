@@ -20,7 +20,7 @@ use tauri_plugin_store::StoreExt;
 use tokio::runtime::Runtime;
 
 use app_log::{frontend_log, open_log_folder, setup_logger};
-use config::{get_initial_state, save_settings};
+use config::{get_hostname, get_initial_state, save_settings};
 use runtime::config::Config;
 use runtime::{spawn_runtime, ConnectionStateEvent, RuntimeEvent, StartOptions};
 use state::AppState;
@@ -37,6 +37,23 @@ async fn toggle_pause(state: State<'_, AppState>) -> Result<(), String> {
         handle.pause().await.map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// Read the current `close_behavior` from the persisted config store.
+/// Returns one of `"minimize_to_tray"`, `"minimize"`, or `"quit"`.
+/// Falls back to `"minimize_to_tray"` when anything goes wrong.
+fn read_close_behavior(app: &AppHandle) -> String {
+    let store = match app.store("config.json") {
+        Ok(s) => s,
+        Err(_) => return "minimize_to_tray".to_string(),
+    };
+    let config_val = store.get("config");
+    if let Some(val) = config_val {
+        if let Ok(cfg) = serde_json::from_value::<Config>(val) {
+            return cfg.close_behavior;
+        }
+    }
+    "minimize_to_tray".to_string()
 }
 
 fn main() -> Result<()> {
@@ -196,6 +213,9 @@ fn main() -> Result<()> {
                         RuntimeEvent::Error(msg) => {
                             let _ = app_handle.emit("status-update", format!("Error: {}", msg));
                         }
+                        RuntimeEvent::LanPeersChanged(peers_json) => {
+                            let _ = app_handle.emit("lan-peers-changed", peers_json);
+                        }
                     }
                 }
             });
@@ -215,13 +235,31 @@ fn main() -> Result<()> {
             open_log_folder,
             frontend_log,
             save_settings,
-            apply_window_effects
+            apply_window_effects,
+            get_hostname
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
-                    window.hide().unwrap();
-                    api.prevent_close();
+                    let behavior = read_close_behavior(window.app_handle());
+
+                    match behavior.as_str() {
+                        "quit" => {
+                            // Let the close proceed — the app will exit.
+                        }
+                        "minimize" => {
+                            // Minimise the window instead of closing.
+                            let _ = window.minimize();
+                            api.prevent_close();
+                        }
+                        // "minimize_to_tray" and any unknown value — hide to
+                        // system tray (works on all platforms; on Linux the
+                        // window is simply hidden since tray support varies).
+                        _ => {
+                            let _ = window.hide();
+                            api.prevent_close();
+                        }
+                    }
                 }
             }
         })

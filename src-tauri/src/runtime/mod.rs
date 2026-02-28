@@ -21,6 +21,7 @@ type WsStream = tokio_tungstenite::WebSocketStream<MaybeTlsStream<tokio::net::Tc
 
 pub mod clipboard;
 pub mod config;
+pub mod lan;
 pub mod messages;
 
 use clipboard::{start_clipboard_monitor, start_clipboard_setter};
@@ -57,9 +58,16 @@ pub enum RuntimeEvent {
     Status(String),
     Connection(ConnectionStateEvent),
     Log(RuntimeLogEvent),
-    ClipboardSent { content_type: String },
-    ClipboardReceived { content_type: String },
+    ClipboardSent {
+        content_type: String,
+    },
+    ClipboardReceived {
+        content_type: String,
+    },
     Error(String),
+    /// JSON-serialised list of discovered LAN peers (emitted by the
+    /// discovery listener whenever the peer map changes).
+    LanPeersChanged(String),
 }
 
 #[derive(Debug, Clone)]
@@ -141,11 +149,16 @@ struct RuntimeWorker {
     paused: bool,
 }
 
-struct ActiveTasks {
-    cancel: CancellationToken,
-    monitor_handle: JoinHandle<()>,
-    setter_handle: JoinHandle<()>,
-    connection_handle: JoinHandle<()>,
+enum ActiveTasks {
+    /// WebSocket server mode — three individual task handles.
+    Server {
+        cancel: CancellationToken,
+        monitor_handle: JoinHandle<()>,
+        setter_handle: JoinHandle<()>,
+        connection_handle: JoinHandle<()>,
+    },
+    /// Serverless LAN mode — managed by the `lan` sub-module.
+    Lan(lan::LanTasks),
 }
 
 impl RuntimeWorker {
@@ -211,85 +224,128 @@ impl RuntimeWorker {
         self.paused = false;
 
         let cfg = options.config.clone();
-        let server_url = Url::parse(&cfg.server_url)
-            .with_context(|| format!("无法解析服务器地址: {}", cfg.server_url))?;
 
-        self.emit_status("正在连接...").await;
-        self.emit_connection(ConnectionStateEvent::Connecting).await;
+        if cfg.is_lan_mode() {
+            // ── LAN (serverless) mode ────────────────────────────────
+            self.emit_status("Starting LAN mode…").await;
+            self.emit_connection(ConnectionStateEvent::Connecting).await;
 
-        let disable_flag = Arc::new(AtomicBool::new(false));
-        let device_id = Uuid::new_v4().to_string();
-        let (tx_out, _) = broadcast::channel::<ClipboardUpdate>(100);
-        let (tx_in, rx_in) = mpsc::channel::<ClipboardBroadcastPayload>(100);
-        let cancel = CancellationToken::new();
-
-        let monitor_events = self.events.clone();
-        let monitor_cancel = cancel.clone();
-        let monitor_disable = disable_flag.clone();
-        let monitor_device = device_id.clone();
-        let monitor_cfg = cfg.max_image_kb;
-        let tx_out_for_monitor = tx_out.clone();
-        let monitor_handle = tokio::spawn(async move {
-            start_clipboard_monitor(
-                tx_out_for_monitor,
-                monitor_disable,
-                monitor_device,
-                monitor_cfg,
-                monitor_events,
-                monitor_cancel,
+            let cancel = CancellationToken::new();
+            let lan_tasks = lan::start_lan_mode(
+                &cfg,
+                Some(cfg.lan_device_name.clone()),
+                self.events.clone(),
+                cancel.clone(),
             )
             .await;
-        });
 
-        let setter_events = self.events.clone();
-        let setter_cancel = cancel.clone();
-        let setter_disable = disable_flag.clone();
-        let setter_handle = tokio::spawn(async move {
-            start_clipboard_setter(rx_in, setter_disable, setter_events, setter_cancel).await;
-        });
+            match lan_tasks {
+                Ok(tasks) => {
+                    self.emit_connection(ConnectionStateEvent::Connected).await;
+                    self.active = Some(ActiveTasks::Lan(tasks));
+                }
+                Err(err) => {
+                    self.emit_error(format!("LAN mode startup failed: {}", err))
+                        .await;
+                    self.emit_connection(ConnectionStateEvent::Disconnected)
+                        .await;
+                    self.paused = true;
+                    return Err(err);
+                }
+            }
+        } else {
+            // ── WebSocket server mode (original behaviour) ───────────
+            let server_url = Url::parse(&cfg.server_url)
+                .with_context(|| format!("无法解析服务器地址: {}", cfg.server_url))?;
 
-        let connection_events = self.events.clone();
-        let connection_cancel = cancel.clone();
-        let cfg_clone = cfg.clone();
-        let server_url_clone = server_url.clone();
-        let connection_handle = tokio::spawn(async move {
-            run_connection_loop(
-                cfg_clone,
-                server_url_clone,
-                tx_out,
-                tx_in,
-                connection_events,
-                connection_cancel,
-            )
-            .await;
-        });
+            self.emit_status("正在连接...").await;
+            self.emit_connection(ConnectionStateEvent::Connecting).await;
 
-        self.active = Some(ActiveTasks {
-            cancel,
-            monitor_handle,
-            setter_handle,
-            connection_handle,
-        });
+            let disable_flag = Arc::new(AtomicBool::new(false));
+            let device_id = Uuid::new_v4().to_string();
+            let (tx_out, _) = broadcast::channel::<ClipboardUpdate>(100);
+            let (tx_in, rx_in) = mpsc::channel::<ClipboardBroadcastPayload>(100);
+            let cancel = CancellationToken::new();
+
+            let monitor_events = self.events.clone();
+            let monitor_cancel = cancel.clone();
+            let monitor_disable = disable_flag.clone();
+            let monitor_device = device_id.clone();
+            let monitor_cfg = cfg.max_image_kb;
+            let tx_out_for_monitor = tx_out.clone();
+            let monitor_handle = tokio::spawn(async move {
+                start_clipboard_monitor(
+                    tx_out_for_monitor,
+                    monitor_disable,
+                    monitor_device,
+                    monitor_cfg,
+                    monitor_events,
+                    monitor_cancel,
+                )
+                .await;
+            });
+
+            let setter_events = self.events.clone();
+            let setter_cancel = cancel.clone();
+            let setter_disable = disable_flag.clone();
+            let setter_handle = tokio::spawn(async move {
+                start_clipboard_setter(rx_in, setter_disable, setter_events, setter_cancel).await;
+            });
+
+            let connection_events = self.events.clone();
+            let connection_cancel = cancel.clone();
+            let cfg_clone = cfg.clone();
+            let server_url_clone = server_url.clone();
+            let connection_handle = tokio::spawn(async move {
+                run_connection_loop(
+                    cfg_clone,
+                    server_url_clone,
+                    tx_out,
+                    tx_in,
+                    connection_events,
+                    connection_cancel,
+                )
+                .await;
+            });
+
+            self.active = Some(ActiveTasks::Server {
+                cancel,
+                monitor_handle,
+                setter_handle,
+                connection_handle,
+            });
+        }
+
         Ok(())
     }
 
     async fn stop_tasks(&mut self, hard: bool) {
         if let Some(active) = self.active.take() {
-            let ActiveTasks {
-                cancel,
-                monitor_handle,
-                setter_handle,
-                connection_handle,
-            } = active;
-            cancel.cancel();
-            if hard {
-                monitor_handle.abort();
-                setter_handle.abort();
-                connection_handle.abort();
-            } else {
-                let _ = monitor_handle.await;
-                let _ = setter_handle.await;
-                let _ = connection_handle.await;
+            match active {
+                ActiveTasks::Server {
+                    cancel,
+                    monitor_handle,
+                    setter_handle,
+                    connection_handle,
+                } => {
+                    cancel.cancel();
+                    if hard {
+                        monitor_handle.abort();
+                        setter_handle.abort();
+                        connection_handle.abort();
+                    } else {
+                        let _ = monitor_handle.await;
+                        let _ = setter_handle.await;
+                        let _ = connection_handle.await;
+                    }
+                }
+                ActiveTasks::Lan(lan_tasks) => {
+                    if hard {
+                        lan_tasks.abort();
+                    } else {
+                        lan_tasks.shutdown().await;
+                    }
+                }
             }
         }
     }
