@@ -21,6 +21,7 @@ use std::{
 
 use log::Level;
 use parking_lot::RwLock;
+use socket2::{Domain, Protocol, Socket, Type};
 use tokio::{
     net::UdpSocket,
     sync::mpsc,
@@ -59,7 +60,7 @@ const PEER_EXPIRY_SECS: u64 = 15;
 
 /// Periodically broadcasts a discovery beacon on the LAN.
 ///
-/// The socket is bound to `0.0.0.0:<discovery_port>` with `SO_BROADCAST`
+/// The socket is bound to `0.0.0.0:0` (ephemeral port) with `SO_BROADCAST`
 /// enabled, and the beacon is sent to `255.255.255.255:<discovery_port>`.
 ///
 /// # Arguments
@@ -167,66 +168,32 @@ pub async fn run_beacon_broadcaster(
 /// want to discover ourselves). Stale peers that haven't sent a beacon within
 /// [`PEER_EXPIRY_SECS`] seconds are pruned on every receive cycle.
 ///
-/// Whenever the peer map changes (a new peer appears, an existing one is
-/// removed, or an update is detected) a `RuntimeEvent` is emitted so the
-/// frontend can refresh its peer list.
+/// Whenever the peer map changes (a new peer appears, an existing peer's
+/// fields are updated, or a stale peer is removed) a
+/// [`RuntimeEvent::LanPeersChanged`] event is emitted so the frontend can
+/// refresh its peer list.
 ///
 /// # Arguments
 ///
-/// * `own_device_id`  — our device id, used to filter self-beacons.
-/// * `discovery_port` — UDP port to listen on (use `0` for the default).
-/// * `peers`          — shared map that will be updated in-place.
-/// * `events`         — channel to emit runtime events.
-/// * `cancel`         — token to signal graceful shutdown.
+/// * `own_device_id` — our device id, used to filter self-beacons.
+/// * `peers`         — shared map that will be updated in-place.
+/// * `socket`        — a pre-bound UDP socket (created via
+///                     [`bind_reusable_udp`] by the caller so that bind
+///                     failures can be surfaced before any tasks are
+///                     spawned).
+/// * `events`        — channel to emit runtime events.
+/// * `cancel`        — token to signal graceful shutdown.
 pub async fn run_beacon_listener(
     own_device_id: String,
-    discovery_port: u16,
     peers: DiscoveredPeers,
+    socket: UdpSocket,
     events: mpsc::Sender<RuntimeEvent>,
     cancel: CancellationToken,
 ) {
-    let port = if discovery_port == 0 {
-        DEFAULT_DISCOVERY_PORT
-    } else {
-        discovery_port
-    };
-
-    let bind_addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port);
-    let socket = match UdpSocket::bind(bind_addr).await {
-        Ok(s) => s,
-        Err(e) => {
-            let _ = events
-                .send(RuntimeEvent::Log(RuntimeLogEvent::new(
-                    Level::Error,
-                    format!("LAN discovery listener bind failed on port {}: {}", port, e),
-                )))
-                .await;
-            return;
-        }
-    };
-
-    // Allow multiple processes on the same machine during development.
-    // This is best-effort — not all platforms support it.
-    #[cfg(not(target_os = "windows"))]
-    {
-        use std::os::unix::io::AsRawFd;
-        let fd = socket.as_raw_fd();
-        unsafe {
-            let optval: libc::c_int = 1;
-            libc::setsockopt(
-                fd,
-                libc::SOL_SOCKET,
-                libc::SO_REUSEADDR,
-                &optval as *const _ as *const libc::c_void,
-                std::mem::size_of::<libc::c_int>() as libc::socklen_t,
-            );
-        }
-    }
-
     let _ = events
         .send(RuntimeEvent::Log(RuntimeLogEvent::new(
             Level::Info,
-            format!("LAN discovery listener started (port={})", port),
+            "LAN discovery listener started",
         )))
         .await;
 
@@ -247,32 +214,14 @@ pub async fn run_beacon_listener(
                             let now = now_unix_secs();
                             let ip = src_addr.ip().to_string();
 
-                            let is_new = {
-                                let reader = peers.read();
-                                !reader.contains_key(&beacon.device_id)
-                            };
+                            let changed = upsert_peer(&peers, &beacon, &ip, now);
 
-                            // Upsert the peer entry.
-                            {
-                                let mut writer = peers.write();
-                                writer.insert(
-                                    beacon.device_id.clone(),
-                                    DiscoveredPeer {
-                                        device_id: beacon.device_id.clone(),
-                                        device_name: beacon.device_name.clone(),
-                                        addr: ip.clone(),
-                                        tcp_port: beacon.tcp_port,
-                                        last_seen: now,
-                                    },
-                                );
-                            }
-
-                            if is_new {
+                            if changed {
                                 let _ = events
                                     .send(RuntimeEvent::Log(RuntimeLogEvent::new(
                                         Level::Info,
                                         format!(
-                                            "LAN peer discovered: {} ({}) at {}:{}",
+                                            "LAN peer discovered/updated: {} ({}) at {}:{}",
                                             beacon.device_name,
                                             beacon.device_id,
                                             ip,
@@ -281,7 +230,6 @@ pub async fn run_beacon_listener(
                                     )))
                                     .await;
 
-                                // Notify frontend that the peer list changed.
                                 emit_peer_list(&peers, &events).await;
                             }
 
@@ -317,6 +265,128 @@ pub async fn run_beacon_listener(
 // Helpers
 // ────────────────────────────────────────────────────────────────────────────
 
+/// Bind a UDP socket with `SO_REUSEADDR` (and `SO_REUSEPORT` where
+/// available) using the [`socket2`] crate so that multiple processes on the
+/// same machine can share the discovery port during development.
+///
+/// This is cross-platform — it works on Windows, macOS, and Linux without
+/// any raw `libc` or `unsafe` code.
+///
+/// The function is `pub` within the crate so that the parent module can
+/// pre-bind the socket and pass it to [`run_beacon_listener`], allowing
+/// bind failures to be surfaced before any background tasks are spawned.
+pub async fn bind_reusable_udp(
+    port: u16,
+    events: &mpsc::Sender<RuntimeEvent>,
+) -> Option<UdpSocket> {
+    let addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port);
+
+    // Create a socket2 socket so we can set options *before* binding.
+    let socket = match Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)) {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = events
+                .send(RuntimeEvent::Log(RuntimeLogEvent::new(
+                    Level::Error,
+                    format!("LAN discovery listener: failed to create socket: {}", e),
+                )))
+                .await;
+            return None;
+        }
+    };
+
+    // SO_REUSEADDR — allow binding even if the port is in TIME_WAIT, and
+    // on some platforms allow multiple sockets on the same port.
+    if let Err(e) = socket.set_reuse_address(true) {
+        let _ = events
+            .send(RuntimeEvent::Log(RuntimeLogEvent::new(
+                Level::Warn,
+                format!(
+                    "LAN discovery listener: SO_REUSEADDR failed (non-fatal): {}",
+                    e
+                ),
+            )))
+            .await;
+    }
+
+    // SO_REUSEPORT — available on macOS / Linux; silently skip on Windows
+    // where it doesn't exist.
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Err(e) = socket.set_reuse_port(true) {
+            let _ = events
+                .send(RuntimeEvent::Log(RuntimeLogEvent::new(
+                    Level::Warn,
+                    format!(
+                        "LAN discovery listener: SO_REUSEPORT failed (non-fatal): {}",
+                        e
+                    ),
+                )))
+                .await;
+        }
+    }
+
+    // Set non-blocking *before* converting to a tokio socket.
+    socket.set_nonblocking(true).ok();
+
+    if let Err(e) = socket.bind(&socket2::SockAddr::from(addr)) {
+        let _ = events
+            .send(RuntimeEvent::Log(RuntimeLogEvent::new(
+                Level::Error,
+                format!(
+                    "LAN discovery listener: bind failed on port {}: {}",
+                    port, e
+                ),
+            )))
+            .await;
+        return None;
+    }
+
+    // Convert socket2 → std → tokio.
+    let std_socket: std::net::UdpSocket = socket.into();
+    match UdpSocket::from_std(std_socket) {
+        Ok(s) => Some(s),
+        Err(e) => {
+            let _ = events
+                .send(RuntimeEvent::Log(RuntimeLogEvent::new(
+                    Level::Error,
+                    format!("LAN discovery listener: tokio conversion failed: {}", e),
+                )))
+                .await;
+            None
+        }
+    }
+}
+
+/// Insert or update a peer entry. Returns `true` when the peer map was
+/// meaningfully changed (new peer, or an existing peer's `device_name`,
+/// `addr`, or `tcp_port` differs from the stored entry).
+fn upsert_peer(peers: &DiscoveredPeers, beacon: &DiscoveryBeacon, ip: &str, now: u64) -> bool {
+    let mut writer = peers.write();
+
+    let new_entry = DiscoveredPeer {
+        device_id: beacon.device_id.clone(),
+        device_name: beacon.device_name.clone(),
+        addr: ip.to_string(),
+        tcp_port: beacon.tcp_port,
+        last_seen: now,
+    };
+
+    if let Some(existing) = writer.get(&beacon.device_id) {
+        let changed = existing.device_name != new_entry.device_name
+            || existing.addr != new_entry.addr
+            || existing.tcp_port != new_entry.tcp_port;
+
+        // Always update `last_seen`, but only report a change when
+        // user-visible fields actually differ.
+        writer.insert(beacon.device_id.clone(), new_entry);
+        changed
+    } else {
+        writer.insert(beacon.device_id.clone(), new_entry);
+        true // brand-new peer
+    }
+}
+
 /// Removes peers that haven't been seen within [`PEER_EXPIRY_SECS`] and
 /// returns the number of entries removed.
 fn prune_stale_peers(peers: &DiscoveredPeers, now: u64) -> usize {
@@ -326,10 +396,9 @@ fn prune_stale_peers(peers: &DiscoveredPeers, now: u64) -> usize {
     before - writer.len()
 }
 
-/// Emit the current peer list as a JSON-serialised `RuntimeEvent::Status`
-/// so the frontend can display it. We avoid inventing a new `RuntimeEvent`
-/// variant here — instead we use the existing `Status` channel with a
-/// recognisable prefix that the frontend can parse.
+/// Emit the current peer list as a JSON-serialised
+/// [`RuntimeEvent::LanPeersChanged`] so the frontend can refresh the
+/// displayed peer list.
 async fn emit_peer_list(peers: &DiscoveredPeers, events: &mpsc::Sender<RuntimeEvent>) {
     let list: Vec<DiscoveredPeer> = peers.read().values().cloned().collect();
     let json = serde_json::to_string(&list).unwrap_or_else(|_| "[]".into());
