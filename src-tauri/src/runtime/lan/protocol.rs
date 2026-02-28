@@ -35,6 +35,10 @@ pub const MAX_RECONNECT_DELAY_SECS: u64 = 30;
 /// Initial reconnection delay (seconds).
 pub const INITIAL_RECONNECT_DELAY_SECS: u64 = 1;
 
+/// Maximum time (seconds) to wait for the remote side to complete the
+/// Hello/Welcome handshake before giving up.
+pub const HANDSHAKE_TIMEOUT_SECS: u64 = 10;
+
 // ────────────────────────────────────────────────────────────────────────────
 // UDP Discovery
 // ────────────────────────────────────────────────────────────────────────────
