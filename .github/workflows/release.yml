@@ -90,7 +90,7 @@ jobs:
         run: |
           VERSION=$(jq -r .version package.json)
           mkdir -p ./final_artifacts
-          BASE_NAME="RustSyncCV v${VERSION} ${{ matrix.os_name }}-${{ matrix.arch }}"
+          BASE_NAME="RustSyncCV-v${VERSION}-${{ matrix.os_name }}-${{ matrix.arch }}"
 
           if [[ "${{ matrix.os_name }}" == "windows" ]]; then
             EXE_FILE="src-tauri/target/release/rust-sync-cv-client.exe"
