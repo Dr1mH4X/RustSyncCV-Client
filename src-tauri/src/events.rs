@@ -5,11 +5,12 @@ use tauri::{AppHandle, Emitter, Manager};
 pub fn listen_events(
     app_handle: AppHandle,
     state: tauri::State<'_, AppState>,
-    mut event_rx: tokio::sync::mpsc::Receiver<RuntimeEvent>,
+    event_rx: tokio::sync::mpsc::Receiver<RuntimeEvent>,
 ) {
     let runtime_clone = state.runtime.clone();
 
     runtime_clone.spawn(async move {
+        let mut event_rx = event_rx;
         while let Some(event) = event_rx.recv().await {
             match &event {
                 RuntimeEvent::Status(text) => {
