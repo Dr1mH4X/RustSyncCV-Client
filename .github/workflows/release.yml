@@ -30,6 +30,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set and Update Version
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="0.0.0-dev"
+            TAG="dev"
+          fi
+          sed -i.bak 's/"version": "[^"]*"/"version": "'$VERSION'"/g' package.json
+          sed -i.bak 's/"version": "[^"]*"/"version": "'$VERSION'"/g' src-tauri/tauri.conf.json
+          sed -i.bak 's/^version = "[^"]*"/version = "'$VERSION'"/g' src-tauri/Cargo.toml
+          rm -f package.json.bak src-tauri/tauri.conf.json.bak src-tauri/Cargo.toml.bak
+
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -160,7 +175,11 @@ jobs:
       - name: Get version
         id: version
         run: |
-          VERSION=$(jq -r .version package.json)
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="0.0.0-dev"
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Generate Changelog
