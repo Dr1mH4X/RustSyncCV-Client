@@ -51,7 +51,12 @@ export default function App() {
           theme: state.config.theme_mode,
         });
       })
-      .catch((err) => console.error("Failed to load initial state:", err));
+      .catch((err) =>
+        invoke("frontend_log", {
+          level: "error",
+          message: `Failed to load initial state: ${err}`,
+        }),
+      );
 
     const unlistenStatus = listen<string>("status-update", (event) => {
       setStatusText(event.payload);
@@ -107,7 +112,7 @@ export default function App() {
     try {
       await invoke("toggle_pause");
     } catch (e) {
-      console.error(e);
+      invoke("frontend_log", { level: "error", message: String(e) });
       setStatusText(`Error: ${e}`);
     }
   };
@@ -116,7 +121,7 @@ export default function App() {
     try {
       await invoke("open_log_folder");
     } catch (e) {
-      console.error(e);
+      invoke("frontend_log", { level: "error", message: String(e) });
     }
   };
 
@@ -140,11 +145,17 @@ export default function App() {
       });
 
       webview.once("tauri://error", (e) => {
-        console.error("Failed to create settings window", e);
+        invoke("frontend_log", {
+          level: "error",
+          message: `Failed to create settings window: ${e}`,
+        });
         setStatusText(`Failed to create settings window: ${e}`);
       });
     } catch (e) {
-      console.error("Error opening settings window:", e);
+      invoke("frontend_log", {
+        level: "error",
+        message: `Error opening settings window: ${e}`,
+      });
       setStatusText(`Error opening settings: ${e}`);
     }
   };
