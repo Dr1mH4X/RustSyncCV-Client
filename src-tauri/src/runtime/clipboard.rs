@@ -188,7 +188,9 @@ pub async fn start_clipboard_setter(
     cancel: CancellationToken,
 ) {
     let mut last_text: Option<String> = None;
+    let mut last_text_ts = 0;
     let mut last_image_data: Option<String> = None;
+    let mut last_image_ts = 0;
     loop {
         tokio::select! {
             _ = cancel.cancelled() => break,
@@ -196,9 +198,10 @@ pub async fn start_clipboard_setter(
                 if let Some(payload) = maybe_payload {
                     match payload.content_type.as_str() {
                         CONTENT_TYPE_TEXT => {
-                            if Some(&payload.data) == last_text.as_ref() {
+                            if payload.timestamp <= last_text_ts || Some(&payload.data) == last_text.as_ref() {
                                 continue;
                             }
+                            last_text_ts = payload.timestamp;
                             last_text = Some(payload.data.clone());
                             if let Err(err) = set_text(&payload.data, disable_flag.clone()).await {
                                 let _ = events.send(RuntimeEvent::Log(RuntimeLogEvent::new(Level::Error, format!("设置文本剪贴板失败: {}", err)))).await;
@@ -208,9 +211,10 @@ pub async fn start_clipboard_setter(
                             }
                         }
                         CONTENT_TYPE_IMAGE_PNG => {
-                            if Some(&payload.data) == last_image_data.as_ref() {
+                            if payload.timestamp <= last_image_ts || Some(&payload.data) == last_image_data.as_ref() {
                                 continue;
                             }
+                            last_image_ts = payload.timestamp;
                             last_image_data = Some(payload.data.clone());
                             if let Err(err) = set_image_from_base64(&payload.data, disable_flag.clone()).await {
                                 let _ = events.send(RuntimeEvent::Log(RuntimeLogEvent::new(Level::Error, format!("设置图片剪贴板失败: {}", err)))).await;
