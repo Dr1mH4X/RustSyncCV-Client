@@ -66,11 +66,6 @@ jobs:
             os_name: "windows"
             arch: "x86_64"
             rust_target: "x86_64-pc-windows-msvc"
-          - job: "linux-amd64"
-            platform: "ubuntu-latest"
-            os_name: "linux"
-            arch: "x86_64"
-            rust_target: "x86_64-unknown-linux-gnu"
           - job: "macos-arm64"
             platform: "macos-latest"
             os_name: "macos"
@@ -111,28 +106,13 @@ jobs:
         with:
           workspaces: "src-tauri -> target"
 
-      - name: Install Linux build dependencies
-        if: matrix.os_name == 'linux'
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            build-essential \
-            libglib2.0-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libwebkit2gtk-4.1-dev \
-            patchelf
-
       - name: Update version
         shell: bash
         run: |
           VERSION="${{ needs.meta.outputs.version }}"
-          sed -i.bak 's/"version": "[^"]*"/"version": "'"$VERSION"'"/g' package.json
-          sed -i.bak 's/"version": "[^"]*"/"version": "'"$VERSION"'"/g' src-tauri/tauri.conf.json
-          sed -i.bak 's/^version = "[^"]*"/version = "'"$VERSION"'"/g' src-tauri/Cargo.toml
+          sed -i.bak 's/\"version\": \"[^\"]*\"/\"version\": \"'"$VERSION"'\"/g' package.json
+          sed -i.bak 's/\"version\": \"[^\"]*\"/\"version\": \"'"$VERSION"'\"/g' src-tauri/tauri.conf.json
+          sed -i.bak 's/^version = \"[^\"]*\"/version = \"'"$VERSION"'\"/g' src-tauri/Cargo.toml
           rm -f package.json.bak src-tauri/tauri.conf.json.bak src-tauri/Cargo.toml.bak
           echo "Updated version to $VERSION"
 
