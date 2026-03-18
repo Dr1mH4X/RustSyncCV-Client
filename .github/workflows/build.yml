@@ -1,0 +1,268 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
+    paths:
+      - "src/**"
+      - "src-tauri/**"
+      - "package.json"
+      - "vite.config.ts"
+      - ".github/workflows/build.yml"
+  pull_request:
+    branches:
+      - "**"
+    paths:
+      - "src/**"
+      - "src-tauri/**"
+      - "package.json"
+      - "vite.config.ts"
+      - ".github/workflows/build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  meta:
+    name: Meta
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      is-release: ${{ steps.meta.outputs.is-release }}
+    steps:
+      - name: Resolve version/tag/release flag
+        id: meta
+        shell: bash
+        run: |
+          REF="${GITHUB_REF}"
+          if [[ "$REF" == refs/tags/v* ]]; then
+            TAG="${REF#refs/tags/}"
+            VERSION="${TAG#v}"
+            IS_RELEASE="true"
+          else
+            TAG="dev"
+            VERSION="0.0.0-dev"
+            IS_RELEASE="false"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "is-release=$IS_RELEASE" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.job }}
+    needs: meta
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - job: "windows-amd64"
+            platform: "windows-latest"
+            os_name: "windows"
+            arch: "x86_64"
+            rust_target: "x86_64-pc-windows-msvc"
+          - job: "linux-amd64"
+            platform: "ubuntu-latest"
+            os_name: "linux"
+            arch: "x86_64"
+            rust_target: "x86_64-unknown-linux-gnu"
+          - job: "macos-arm64"
+            platform: "macos-latest"
+            os_name: "macos"
+            arch: "aarch64"
+            rust_target: "aarch64-apple-darwin"
+
+    runs-on: ${{ matrix.platform }}
+
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      APP_NAME: RustSyncCV
+      BIN_NAME: rust-sync-cv-client
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.5
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Sync version in project files
+        shell: bash
+        run: |
+          sed -i.bak 's/"version": "[^"]*"/"version": "'"$VERSION"'"/g' package.json
+          sed -i.bak 's/"version": "[^"]*"/"version": "'"$VERSION"'"/g' src-tauri/tauri.conf.json
+          sed -i.bak 's/^version = "[^"]*"/version = "'"$VERSION"'"/g' src-tauri/Cargo.toml
+          rm -f package.json.bak src-tauri/tauri.conf.json.bak src-tauri/Cargo.toml.bak
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate icons if source exists
+        shell: bash
+        run: |
+          SOURCE_IMG="src-tauri/icons/icon.png"
+          if [ -f "$SOURCE_IMG" ]; then
+            pnpm tauri icon "$SOURCE_IMG"
+          fi
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: sccache
+        with:
+          args: --target ${{ matrix.rust_target }}
+
+      - name: Collect install payload
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          OUT_DIR="install/${APP_NAME}-${{ matrix.os_name }}-${{ matrix.arch }}-v${VERSION}"
+          mkdir -p "$OUT_DIR"
+
+          cp LICENSE* "$OUT_DIR/" 2>/dev/null || true
+          cp README* "$OUT_DIR/" 2>/dev/null || true
+
+          if [[ "${{ matrix.os_name }}" == "windows" ]]; then
+            BIN="src-tauri/target/${{ matrix.rust_target }}/release/${BIN_NAME}.exe"
+            PDB="src-tauri/target/${{ matrix.rust_target }}/release/${BIN_NAME}.pdb"
+            if [[ ! -f "$BIN" ]]; then
+              echo "Binary not found: $BIN"
+              exit 1
+            fi
+            cp "$BIN" "$OUT_DIR/"
+            [[ -f "$PDB" ]] && cp "$PDB" "$OUT_DIR/" || true
+          else
+            BIN="src-tauri/target/${{ matrix.rust_target }}/release/${BIN_NAME}"
+            if [[ ! -f "$BIN" ]]; then
+              echo "Binary not found: $BIN"
+              exit 1
+            fi
+            chmod +x "$BIN"
+            cp "$BIN" "$OUT_DIR/"
+          fi
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          DIR_NAME="${APP_NAME}-${{ matrix.os_name }}-${{ matrix.arch }}-v${VERSION}"
+          SRC_DIR="install/${DIR_NAME}"
+
+          if [[ "${{ matrix.os_name }}" == "windows" ]]; then
+            # 按你的方案：Windows 上传原始目录
+            cp -r "$SRC_DIR" "dist/"
+          else
+            # 按你的方案：Linux/macOS 产物压缩为 tar.gz
+            tar -czf "dist/${DIR_NAME}.tar.gz" -C install "${DIR_NAME}"
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.job }}
+          path: dist/*
+
+  changelog:
+    name: Changelog
+    needs: meta
+    runs-on: ubuntu-latest
+    outputs:
+      content: ${{ steps.git-cliff.outputs.content }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: git-cliff
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: .github/cliff.toml
+          args: ${{ needs.meta.outputs.is-release == 'true' && '--latest --strip header' || '--unreleased --strip header' }}
+        env:
+          GITHUB_REPO: ${{ github.repository }}
+
+  release:
+    name: Release
+    needs: [meta, build, changelog]
+    runs-on: ubuntu-latest
+    if: needs.meta.outputs.is-release == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: build-*
+          merge-multiple: false
+
+      - name: Repackage and collect release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release_files
+
+          cd artifacts
+          for root in */; do
+            [ -d "$root" ] || continue
+            cd "$root"
+
+            for item in *; do
+              [ -e "$item" ] || continue
+
+              # Windows 原始目录 -> zip
+              if [[ -d "$item" && "$item" == *"-windows-"* ]]; then
+                zip -r "../../release_files/${item}.zip" "$item"
+              fi
+
+              # Linux/macOS tar.gz -> 直接汇总
+              if [[ -f "$item" && "$item" == *.tar.gz ]]; then
+                mv "$item" "../../release_files/"
+              fi
+            done
+
+            cd ..
+          done
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.meta.outputs.tag }}
+          name: RustSyncCV ${{ needs.meta.outputs.tag }}
+          body: ${{ needs.changelog.outputs.content }}
+          files: release_files/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
