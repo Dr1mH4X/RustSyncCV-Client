@@ -100,6 +100,7 @@ pub enum PeerMessage {
     Clipboard {
         content_type: String,
         data: String,
+        timestamp: u64,
     },
 }
 
