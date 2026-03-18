@@ -87,10 +87,7 @@ pub async fn start_clipboard_monitor(
                                     content_type: CONTENT_TYPE_TEXT.to_string(),
                                     data: text,
                                     sender_device_id: device_id.clone(),
-                                    timestamp: std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap_or_default()
-                                        .as_secs(),
+                                    timestamp: current_timestamp(),
                                 },
                             };
                             let _ = tx.send(update);
@@ -146,10 +143,7 @@ pub async fn start_clipboard_monitor(
                                             content_type: CONTENT_TYPE_IMAGE_PNG.to_string(),
                                             data: b64,
                                             sender_device_id: device_id.clone(),
-                                            timestamp: std::time::SystemTime::now()
-                                                .duration_since(std::time::UNIX_EPOCH)
-                                                .unwrap_or_default()
-                                                .as_secs(),
+                                            timestamp: current_timestamp(),
                                         },
                                     };
                                     let _ = tx.send(update);
@@ -193,8 +187,10 @@ pub async fn start_clipboard_setter(
     events: mpsc::Sender<RuntimeEvent>,
     cancel: CancellationToken,
 ) {
-    let mut last_text = String::new();
-    let mut last_image_data = String::new();
+    let mut last_text: Option<String> = None;
+    let mut last_text_ts = 0;
+    let mut last_image_data: Option<String> = None;
+    let mut last_image_ts = 0;
     loop {
         tokio::select! {
             _ = cancel.cancelled() => break,
@@ -202,10 +198,11 @@ pub async fn start_clipboard_setter(
                 if let Some(payload) = maybe_payload {
                     match payload.content_type.as_str() {
                         CONTENT_TYPE_TEXT => {
-                            if payload.data == last_text {
+                            if payload.timestamp <= last_text_ts || Some(&payload.data) == last_text.as_ref() {
                                 continue;
                             }
-                            last_text = payload.data.clone();
+                            last_text_ts = payload.timestamp;
+                            last_text = Some(payload.data.clone());
                             if let Err(err) = set_text(&payload.data, disable_flag.clone()).await {
                                 let _ = events.send(RuntimeEvent::Log(RuntimeLogEvent::new(Level::Error, format!("设置文本剪贴板失败: {}", err)))).await;
                             } else {
@@ -214,10 +211,11 @@ pub async fn start_clipboard_setter(
                             }
                         }
                         CONTENT_TYPE_IMAGE_PNG => {
-                            if payload.data == last_image_data {
+                            if payload.timestamp <= last_image_ts || Some(&payload.data) == last_image_data.as_ref() {
                                 continue;
                             }
-                            last_image_data = payload.data.clone();
+                            last_image_ts = payload.timestamp;
+                            last_image_data = Some(payload.data.clone());
                             if let Err(err) = set_image_from_base64(&payload.data, disable_flag.clone()).await {
                                 let _ = events.send(RuntimeEvent::Log(RuntimeLogEvent::new(Level::Error, format!("设置图片剪贴板失败: {}", err)))).await;
                             } else {
@@ -307,6 +305,13 @@ fn read_clipboard_content() -> Result<ClipboardContent, String> {
     } else {
         Err("剪贴板没有可识别的内容".into())
     }
+}
+
+fn current_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 fn encode_png(bytes: Vec<u8>, width: u32, height: u32) -> Result<Vec<u8>, String> {
