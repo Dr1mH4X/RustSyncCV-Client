@@ -55,7 +55,7 @@ export default function App() {
         invoke("frontend_log", {
           level: "error",
           message: `Failed to load initial state: ${err}`,
-        }),
+        }).catch(() => {}),
       );
 
     const unlistenStatus = listen<string>("status-update", (event) => {
@@ -112,7 +112,9 @@ export default function App() {
     try {
       await invoke("toggle_pause");
     } catch (e) {
-      invoke("frontend_log", { level: "error", message: String(e) });
+      invoke("frontend_log", { level: "error", message: String(e) }).catch(
+        () => {},
+      );
       setStatusText(`Error: ${e}`);
     }
   };
@@ -121,7 +123,9 @@ export default function App() {
     try {
       await invoke("open_log_folder");
     } catch (e) {
-      invoke("frontend_log", { level: "error", message: String(e) });
+      invoke("frontend_log", { level: "error", message: String(e) }).catch(
+        () => {},
+      );
     }
   };
 
@@ -148,14 +152,14 @@ export default function App() {
         invoke("frontend_log", {
           level: "error",
           message: `Failed to create settings window: ${e}`,
-        });
+        }).catch(() => {});
         setStatusText(`Failed to create settings window: ${e}`);
       });
     } catch (e) {
       invoke("frontend_log", {
         level: "error",
         message: `Error opening settings window: ${e}`,
-      });
+      }).catch(() => {});
       setStatusText(`Error opening settings: ${e}`);
     }
   };
