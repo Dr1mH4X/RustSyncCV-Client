@@ -39,6 +39,7 @@ pub struct ClipboardUpdatePayload {
     pub content_type: String,
     pub data: String,
     pub sender_device_id: String,
+    pub timestamp: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -67,6 +68,7 @@ pub struct ClipboardBroadcast {
 pub struct ClipboardBroadcastPayload {
     pub content_type: String,
     pub data: String,
+    pub timestamp: u64,
 }
 
 // 客户端发送的消息结构

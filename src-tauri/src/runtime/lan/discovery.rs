@@ -85,10 +85,7 @@ pub async fn run_beacon_broadcaster(
         discovery_port
     };
 
-    // Bind to INADDR_ANY so the OS picks the right interface.
-    // We use port 0 for the *sending* socket so we don't conflict with the
-    // listener that is bound to the same discovery port.
-    let socket = match UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0)).await {
+    let mut socket = match UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0)).await {
         Ok(s) => s,
         Err(e) => {
             let _ = events
@@ -141,9 +138,16 @@ pub async fn run_beacon_broadcaster(
                     let _ = events
                         .send(RuntimeEvent::Log(RuntimeLogEvent::new(
                             Level::Warn,
-                            format!("LAN beacon send failed: {}", e),
+                            format!("LAN beacon send failed (attempting rebind): {}", e),
                         )))
                         .await;
+
+                    // Attempt to rebind on network error
+                    if let Ok(new_socket) = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0)).await {
+                        if new_socket.set_broadcast(true).is_ok() {
+                            socket = new_socket;
+                        }
+                    }
                 }
                 seq = seq.wrapping_add(1);
             }

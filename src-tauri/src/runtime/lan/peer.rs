@@ -441,6 +441,7 @@ async fn run_peer_session(
                         let msg = PeerMessage::Clipboard {
                             content_type: update.payload.content_type.clone(),
                             data: update.payload.data.clone(),
+                            timestamp: update.payload.timestamp,
                         };
                         let frame = encode_peer_message(&msg);
                         let mut w = writer.lock().await;
@@ -490,10 +491,11 @@ async fn run_peer_session(
                             PeerMessage::Pong { .. } => {
                                 last_pong = Instant::now();
                             }
-                            PeerMessage::Clipboard { content_type, data } => {
+                            PeerMessage::Clipboard { content_type, data, timestamp } => {
                                 let payload = ClipboardBroadcastPayload {
                                     content_type: content_type.clone(),
                                     data,
+                                    timestamp,
                                 };
                                 let _ = tx_in.send(payload).await;
 

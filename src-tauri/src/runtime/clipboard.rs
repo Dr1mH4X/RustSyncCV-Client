@@ -87,6 +87,10 @@ pub async fn start_clipboard_monitor(
                                     content_type: CONTENT_TYPE_TEXT.to_string(),
                                     data: text,
                                     sender_device_id: device_id.clone(),
+                                    timestamp: std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap()
+                                        .as_secs(),
                                 },
                             };
                             let _ = tx.send(update);
@@ -142,6 +146,10 @@ pub async fn start_clipboard_monitor(
                                             content_type: CONTENT_TYPE_IMAGE_PNG.to_string(),
                                             data: b64,
                                             sender_device_id: device_id.clone(),
+                                            timestamp: std::time::SystemTime::now()
+                                                .duration_since(std::time::UNIX_EPOCH)
+                                                .unwrap()
+                                                .as_secs(),
                                         },
                                     };
                                     let _ = tx.send(update);
@@ -185,11 +193,16 @@ pub async fn start_clipboard_setter(
     events: mpsc::Sender<RuntimeEvent>,
     cancel: CancellationToken,
 ) {
+    let mut last_timestamp = 0;
     loop {
         tokio::select! {
             _ = cancel.cancelled() => break,
             maybe_payload = rx.recv() => {
                 if let Some(payload) = maybe_payload {
+                    if payload.timestamp < last_timestamp {
+                        continue;
+                    }
+                    last_timestamp = payload.timestamp;
                     match payload.content_type.as_str() {
                         CONTENT_TYPE_TEXT => {
                             if let Err(err) = set_text(&payload.data, disable_flag.clone()).await {
