@@ -12,6 +12,7 @@ src-tauri/gen/schemas
 **/.vscode/
 **/.idea/
 *.code-workspace
+AGENT.md
 
 # temp
 *.log
