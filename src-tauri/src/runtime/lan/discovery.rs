@@ -143,9 +143,32 @@ pub async fn run_beacon_broadcaster(
                         .await;
 
                     // Attempt to rebind on network error
-                    if let Ok(new_socket) = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0)).await {
-                        if new_socket.set_broadcast(true).is_ok() {
-                            socket = new_socket;
+                    match UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0)).await {
+                        Ok(new_socket) => {
+                            if let Err(err) = new_socket.set_broadcast(true) {
+                                let _ = events
+                                    .send(RuntimeEvent::Log(RuntimeLogEvent::new(
+                                        Level::Error,
+                                        format!("LAN beacon rebind set_broadcast failed: {}", err),
+                                    )))
+                                    .await;
+                            } else {
+                                socket = new_socket;
+                                let _ = events
+                                    .send(RuntimeEvent::Log(RuntimeLogEvent::new(
+                                        Level::Info,
+                                        "LAN beacon rebind successful".to_string(),
+                                    )))
+                                    .await;
+                            }
+                        }
+                        Err(err) => {
+                            let _ = events
+                                .send(RuntimeEvent::Log(RuntimeLogEvent::new(
+                                    Level::Error,
+                                    format!("LAN beacon rebind failed: {}", err),
+                                )))
+                                .await;
                         }
                     }
                 }

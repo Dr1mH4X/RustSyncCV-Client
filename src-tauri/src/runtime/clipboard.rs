@@ -89,7 +89,7 @@ pub async fn start_clipboard_monitor(
                                     sender_device_id: device_id.clone(),
                                     timestamp: std::time::SystemTime::now()
                                         .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap()
+                                        .unwrap_or_default()
                                         .as_secs(),
                                 },
                             };
@@ -148,7 +148,7 @@ pub async fn start_clipboard_monitor(
                                             sender_device_id: device_id.clone(),
                                             timestamp: std::time::SystemTime::now()
                                                 .duration_since(std::time::UNIX_EPOCH)
-                                                .unwrap()
+                                                .unwrap_or_default()
                                                 .as_secs(),
                                         },
                                     };
@@ -193,18 +193,19 @@ pub async fn start_clipboard_setter(
     events: mpsc::Sender<RuntimeEvent>,
     cancel: CancellationToken,
 ) {
-    let mut last_timestamp = 0;
+    let mut last_text = String::new();
+    let mut last_image_data = String::new();
     loop {
         tokio::select! {
             _ = cancel.cancelled() => break,
             maybe_payload = rx.recv() => {
                 if let Some(payload) = maybe_payload {
-                    if payload.timestamp < last_timestamp {
-                        continue;
-                    }
-                    last_timestamp = payload.timestamp;
                     match payload.content_type.as_str() {
                         CONTENT_TYPE_TEXT => {
+                            if payload.data == last_text {
+                                continue;
+                            }
+                            last_text = payload.data.clone();
                             if let Err(err) = set_text(&payload.data, disable_flag.clone()).await {
                                 let _ = events.send(RuntimeEvent::Log(RuntimeLogEvent::new(Level::Error, format!("设置文本剪贴板失败: {}", err)))).await;
                             } else {
@@ -213,6 +214,10 @@ pub async fn start_clipboard_setter(
                             }
                         }
                         CONTENT_TYPE_IMAGE_PNG => {
+                            if payload.data == last_image_data {
+                                continue;
+                            }
+                            last_image_data = payload.data.clone();
                             if let Err(err) = set_image_from_base64(&payload.data, disable_flag.clone()).await {
                                 let _ = events.send(RuntimeEvent::Log(RuntimeLogEvent::new(Level::Error, format!("设置图片剪贴板失败: {}", err)))).await;
                             } else {
