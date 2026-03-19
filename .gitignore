@@ -15,7 +15,9 @@ src-tauri/gen/schemas
 
 # ai
 .claude/
+.agents/
 AGENT.md
+skills-lock.json
 
 # temp
 *.log
